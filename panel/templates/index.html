@@ -119,18 +119,32 @@
   </section>
 
   <section class="bg-slate-800 rounded-lg border border-slate-700 p-5">
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 flex-wrap">
       <span class="inline-block w-3 h-3 rounded-full {% if status.running %}bg-emerald-400{% else %}bg-red-500{% endif %}"></span>
       <h2 class="text-lg font-semibold">
         {% if status.running %}Servidor en linea{% else %}Servidor detenido{% endif %}
       </h2>
       {% if status.started %}<span class="text-xs text-slate-400">(iniciado {{ status.started }})</span>{% endif %}
-      <form id="restart-form" method="post" action="/api/restart" class="ml-auto"
-            onsubmit="event.preventDefault(); doRestart();">
-        <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-3 py-2 rounded">
-          Reiniciar servidor
+      <div class="ml-auto flex items-center gap-2">
+        {% if status.running %}
+        <button type="button" onclick="powerAction('stop')"
+                class="bg-red-600 hover:bg-red-500 text-white text-sm font-medium px-3 py-2 rounded inline-flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9"/></svg>
+          Apagar
         </button>
-      </form>
+        <button type="button" onclick="powerAction('restart')"
+                class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-3 py-2 rounded inline-flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Reiniciar
+        </button>
+        {% else %}
+        <button type="button" onclick="powerAction('start')"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-3 py-2 rounded inline-flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 0112.728 0M12 3v9m0 6l3-3m-3 3l-3-3"/></svg>
+          Encender
+        </button>
+        {% endif %}
+      </div>
     </div>
     {% if status.error %}<p class="mt-2 text-sm text-red-400">{{ status.error }}</p>{% endif %}
   </section>
@@ -420,6 +434,94 @@ async function doRestart() {
     }
   } catch (e) {
     showError('Error de red', e.message);
+  }
+}
+
+async function powerAction(action) {
+  if (action === 'stop') {
+    if (!confirm('Apagar el servidor PZ?\n\nLos jugadores conectados seran desconectados. Los saves en disco se conservan.')) return;
+  } else if (action === 'restart') {
+    if (!confirm('Reiniciar el servidor PZ? Los jugadores seran desconectados unos segundos.')) return;
+  }
+
+  const labels = {
+    start:    ['Encendiendo servidor...',  'Paso unico: arrancando contenedor...',          15],
+    stop:     ['Apagando servidor...',     'Deteniendo la JVM de forma ordenada (~30-60s)...', 15],
+    restart:  ['Reiniciando contenedor...', 'Paso 2 de 3: el contenedor PZ se esta reiniciando...', 15],
+  };
+  const [title, phase, progress] = labels[action];
+  showOverlay(title, phase, progress);
+
+  try {
+    const r = await fetch(`/api/${action}`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      redirect: 'manual',
+    });
+    const data = await safeJson(r);
+    if (!data.ok) {
+      showError('Error', data.message || 'Error desconocido');
+      return;
+    }
+    await sleep(400);
+    if (action === 'stop') {
+      await pollPower(false);
+    } else {
+      await pollPower(true);
+    }
+  } catch (e) {
+    showError('Error de red', e.message);
+  }
+}
+
+async function pollPower(targetRunning) {
+  const startMs = Date.now();
+  const deadline = startMs + 180000; // 3 min maximo
+
+  for (let i = 0; i < 90; i++) {
+    await sleep(2000);
+    if (Date.now() > deadline) break;
+
+    const elapsed = Math.floor((Date.now() - startMs) / 1000);
+    const status = await fetchStatus();
+    if (!status) continue;
+
+    if (targetRunning === false) {
+      overlayPhase.textContent = `Paso unico: esperando a que el contenedor se detenga (${elapsed}s)...`;
+      if (!status.running) {
+        overlayBar.style.width = '100%';
+        showSuccess('Servidor apagado', 'El contenedor esta detenido. La instancia consume 0 CPU y ~0 RAM. Pulsa Encender cuando quieras volver a jugar.');
+        return;
+      }
+    } else {
+      let logs = '';
+      try { logs = await fetchLogsRaw(20); } catch {}
+      overlayLogs.textContent = logs;
+      overlayLogs.scrollTop = overlayLogs.scrollHeight;
+
+      const recentStart = status.started ? (Date.now() - new Date(status.started).getTime()) < 120000 : false;
+      const ready = status.running && recentStart && (logs.includes('*** SERVER STARTED') || logs.includes('Steam is enabled'));
+
+      if (ready) {
+        overlayBar.style.width = '100%';
+        showSuccess('Servidor encendido', 'Aceptando conexiones en los puertos UDP 16261/16262/8766/8767.');
+        return;
+      }
+
+      if (elapsed < 8) {
+        overlayPhase.textContent = `Paso unico: arrancando contenedor (${elapsed}s)...`;
+      } else if (elapsed < 30) {
+        overlayPhase.textContent = `JVM arrancando, configurando subsistemas (${elapsed}s)...`;
+      } else {
+        overlayPhase.textContent = `Inicializando mundo, espera unos segundos mas (${elapsed}s)...`;
+      }
+    }
+  }
+
+  if (targetRunning === false) {
+    showError('Tiempo agotado', 'No se detuvo en 3 min. Revisa con scripts/logs.cmd');
+  } else {
+    showError('Tiempo agotado', 'No arranco en 3 min. Mira scripts/logs.cmd o /api/status');
   }
 }
 

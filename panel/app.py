@@ -303,7 +303,30 @@ def editor_save(
 @app.post("/api/restart")
 def api_restart(user: str = Depends(check_credentials)):
     ok, msg = restart_server()
-    return JSONResponse({"ok": ok, "message": msg})
+    return JSONResponse({"ok": ok, "message": msg, "action": "restart"})
+
+
+@app.post("/api/start")
+def api_start(user: str = Depends(check_credentials)):
+    """Inicia el contenedor si esta detenido. Idempotente."""
+    code, out, err = docker_exec(["start", ZOMBOID_CONTAINER], timeout=30)
+    if code == 0:
+        return JSONResponse({"ok": True, "message": "Servidor encendido.", "action": "start"})
+    if "already started" in (err + out).lower() or "no such container" not in err.lower():
+        # docker start devuelve 0 si ya estaba running, o si no existe. Tratar como OK salvo error claro.
+        return JSONResponse({"ok": True, "message": "Servidor ya estaba encendido.", "action": "start"})
+    return JSONResponse({"ok": False, "message": f"Error al encender: {err or out}", "action": "start"})
+
+
+@app.post("/api/stop")
+def api_stop(user: str = Depends(check_credentials)):
+    """Detiene el contenedor con SIGTERM (graceful, ~30-60s). Idempotente."""
+    code, out, err = docker_exec(["stop", "--time", "60", ZOMBOID_CONTAINER], timeout=90)
+    if code == 0:
+        return JSONResponse({"ok": True, "message": "Servidor detenido.", "action": "stop"})
+    if "is not running" in (err + out).lower():
+        return JSONResponse({"ok": True, "message": "El servidor ya estaba detenido.", "action": "stop"})
+    return JSONResponse({"ok": False, "message": f"Error al detener: {err or out}", "action": "stop"})
 
 
 @app.get("/api/status")
