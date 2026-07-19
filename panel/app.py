@@ -206,9 +206,12 @@ async def save(request: Request, response: Response, user: str = Depends(check_c
     page overlay can follow the restart progress live.
     Accepts either AJAX (expects JSON) or regular form submit (redirects).
     """
-    wants_json = "application/json" in request.headers.get("accept", "") or \
-                 "fetch" in request.headers.get("sec-fetch-mode", "").lower() or \
-                 request.headers.get("x-requested-with") == "XMLHttpRequest"
+    accept = request.headers.get("accept", "").lower()
+    wants_json = (
+        "application/json" in accept
+        or "xmlhttprequest" == request.headers.get("x-requested-with", "").lower()
+        or request.headers.get("sec-fetch-mode", "").lower() == "cors"
+    )
 
     body = await request.form()
     category = body.get("_category", "")

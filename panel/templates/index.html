@@ -361,14 +361,26 @@ async function pollRestart() {
   showError('Tiempo agotado', 'El reinicio tardo mas de 3 min. Revisa los logs manualmente con scripts/logs.cmd');
 }
 
+async function safeJson(resp) {
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return await resp.json();
+  const text = await resp.text();
+  return { ok: resp.ok, message: text.slice(0, 200) || `HTTP ${resp.status}` };
+}
+
 async function saveWithFeedback(form) {
   const formData = new FormData(form);
   const cat = formData.get('_category') || 'cambios';
   showOverlay('Guardando cambios...', `Paso 1 de 3: escribiendo INI (categoria: ${cat})...`, 5);
 
   try {
-    const resp = await fetch('/save', { method: 'POST', body: formData });
-    const data = await resp.json();
+    const resp = await fetch('/save', {
+      method: 'POST',
+      body: formData,
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      redirect: 'manual',
+    });
+    const data = await safeJson(resp);
     if (data.ok === false) {
       showError('Error guardando', data.message || 'Error desconocido');
       return;
@@ -394,8 +406,12 @@ document.querySelectorAll('form[data-tab-form]').forEach(form => {
 async function doRestart() {
   showOverlay('Reiniciando contenedor...', 'Paso 2 de 3: el contenedor PZ se esta reiniciando...', 15);
   try {
-    const r = await fetch('/api/restart', { method: 'POST' });
-    const data = await r.json();
+    const r = await fetch('/api/restart', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      redirect: 'manual',
+    });
+    const data = await safeJson(r);
     if (data.ok) {
       await sleep(400);
       await pollRestart(true);
