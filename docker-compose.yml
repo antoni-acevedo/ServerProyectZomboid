@@ -44,7 +44,10 @@ services:
     container_name: pz-panel
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      # Antes: "127.0.0.1:8080:8080" -> acoplaba al loopback del host, Traefik no llegaba.
+      # Ahora sin prefijo: Dokploy Traefik habla con el contenedor por DNS interno (panel:8080).
+      # Si ademas quieres acceso directo por IP (http://VPS:8080), anade firewall abierto en el 8080 del host.
+      - "8080:8080"
     volumes:
       - ./pzdata:/data:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
