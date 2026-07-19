@@ -1,0 +1,57 @@
+{% macro field(f, value) -%}
+  {% if f.type == 'bool' %}
+    <label class="flex items-start gap-2 select-none">
+      <input type="hidden" name="{{ f.key }}" value="false" />
+      <input type="checkbox" name="{{ f.key }}" value="true" {% if value == 'true' or value == '' %}checked{% endif %}
+             class="mt-1 w-4 h-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900" />
+      <div class="flex-1">
+        <span class="text-sm text-slate-200">{{ f.label or f.key }}{% if f.tip %} <span class="cursor-help text-slate-500 hover:text-slate-300 ml-1" title="{{ f.tip | e }}">?</span>{% endif %}</span>
+        {% if f.tip %}<p class="text-xs text-slate-500 mt-0.5">{{ f.tip }}</p>{% endif %}
+      </div>
+    </label>
+  {% elif f.type == 'int' %}
+    <label class="block">
+      <span class="text-sm text-slate-200">
+        {{ f.label or f.key }}{% if f.tip %} <span class="cursor-help text-slate-500 hover:text-slate-300 ml-1" title="{{ f.tip | e }}">?</span>{% endif %}
+      </span>
+      <input type="number" name="{{ f.key }}" value="{{ value or '' }}"
+             {% if f.min is defined and f.min is not none %}min="{{ f.min }}"{% endif %}
+             {% if f.max is defined and f.max is not none %}max="{{ f.max }}"{% endif %}
+             step="1"
+             class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 font-mono text-sm" />
+      {% if f.tip %}<p class="text-xs text-slate-500 mt-1">{{ f.tip }}</p>{% endif %}
+    </label>
+  {% elif f.type == 'float' %}
+    <label class="block">
+      <span class="text-sm text-slate-200">
+        {{ f.label or f.key }}{% if f.tip %} <span class="cursor-help text-slate-500 hover:text-slate-300 ml-1" title="{{ f.tip | e }}">?</span>{% endif %}
+      </span>
+      <input type="number" name="{{ f.key }}" value="{{ value or '' }}"
+             {% if f.min is defined and f.min is not none %}min="{{ f.min }}"{% endif %}
+             {% if f.max is defined and f.max is not none %}max="{{ f.max }}"{% endif %}
+             {% if f.step is defined and f.step is not none %}step="{{ f.step }}"{% else %}step="0.01"{% endif %}
+             class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 font-mono text-sm" />
+      {% if f.tip %}<p class="text-xs text-slate-500 mt-1">{{ f.tip }}</p>{% endif %}
+    </label>
+  {% elif f.get('multiline') %}
+    <label class="block">
+      <span class="text-sm text-slate-200">
+        {{ f.label or f.key }}{% if f.tip %} <span class="cursor-help text-slate-500 hover:text-slate-300 ml-1" title="{{ f.tip | e }}">?</span>{% endif %}
+      </span>
+      <textarea name="{{ f.key }}" rows="{{ f.rows or 2 }}"
+                {% if f.placeholder %}placeholder="{{ f.placeholder }}"{% endif %}
+                class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 font-mono text-sm">{{ value or '' }}</textarea>
+      {% if f.tip %}<p class="text-xs text-slate-500 mt-1">{{ f.tip }}</p>{% endif %}
+    </label>
+  {% else %}
+    <label class="block">
+      <span class="text-sm text-slate-200">
+        {{ f.label or f.key }}{% if f.tip %} <span class="cursor-help text-slate-500 hover:text-slate-300 ml-1" title="{{ f.tip | e }}">?</span>{% endif %}
+      </span>
+      <input type="text" name="{{ f.key }}" value="{{ value or '' }}"
+             {% if f.placeholder %}placeholder="{{ f.placeholder }}"{% endif %}
+             class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 font-mono text-sm" />
+      {% if f.tip %}<p class="text-xs text-slate-500 mt-1">{{ f.tip }}</p>{% endif %}
+    </label>
+  {% endif %}
+{%- endmacro %}

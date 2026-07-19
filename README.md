@@ -94,6 +94,33 @@ La primera vez tarda unos minutos (descarga la imagen ~2.3 GB). Las siguientes s
 
 > **CGNAT**: si tu ISP usa Carrier-Grade NAT (algunos operadores en Espana), la IP publica aparece en el panel pero **no funcionara** para conexiones entrantes. Soluciones: tunel con ZeroTier / Radmin VPN, o un VPS.
 
+### Desplegar en un VPS / servidor dedicado
+
+Si despliegas este proyecto en un VPS (DigitalOcean, Hetzner, AWS, OVH, etc.), los cambios principales son:
+
+1. **IPs en `.env`**:
+   - `LOCAL_IP=` (vacio): en un VPS no hay "LAN" relevante para conectar; todo va por Internet.
+   - `PUBLIC_IP=<IP del VPS>` o vacio: pon la IP que te dio el proveedor (ej: `203.0.113.45`), o dejala vacia para auto-deteccion via `api.ipify.org`.
+
+2. **Firewall del VPS (iptables / ufw)**: en Linux no sirve la regla de Windows. Equivalente:
+   ```bash
+   # ufw (Ubuntu/Debian)
+   sudo ufw allow 16261/udp
+   sudo ufw allow 16262/udp
+   sudo ufw allow 8766/udp
+   sudo ufw allow 8767/udp
+   # o con iptables
+   sudo iptables -A INPUT -p udp --dport 16261 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 16262 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 8766 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 8767 -j ACCEPT
+   ```
+   La mayoria de proveedores de VPS tienen un firewall externo (security group) ademas del interno; abrilos en los dos sitios.
+
+3. **Panel web**: por defecto escucha en `127.0.0.1:8080`. Para acceder desde fuera, configura un reverse proxy (nginx/caddy) con HTTPS, o cambia el `ports` del servicio `panel` en `docker-compose.yml` a `"8080:8080/tcp"` (sin `127.0.0.1:`). Mas info: [seccion del README o manual de cada proveedor].
+
+4. **Persistencia**: los saves viven en `./pzdata/`. Haz backup regular de esa carpeta.
+
 ### Conectarse al servidor
 
 1. Abrir Project Zomboid en Steam.
@@ -101,6 +128,31 @@ La primera vez tarda unos minutos (descarga la imagen ~2.3 GB). Las siguientes s
 3. Menu principal > **Join** (Unirse) > Pestana **IP Direct**.
 4. Escribir `IP:16261` (ej: `192.168.1.50:16261` o `83.45.123.78:16261`).
 5. Si pusiste `SERVER_PASSWORD` en `.env`, te la pedira al entrar.
+
+### Requisito de firewall (obligatorio para LAN e Internet)
+
+`localhost` (127.0.0.1) funciona porque Windows no aplica firewall al loopback. Para conexiones desde la IP LAN o desde Internet, hace falta abrir los puertos UDP en Windows Defender Firewall. **Solo hay que hacerlo una vez por maquina**.
+
+Abrir **PowerShell como Administrador** y ejecutar:
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "PZ Server (Docker)" `
+  -Direction Inbound `
+  -Protocol UDP `
+  -LocalPort 16261,16262,8766,8767 `
+  -Action Allow `
+  -Profile Any `
+  -Enabled True
+```
+
+Verificar que esta activa:
+```powershell
+Get-NetFirewallRule -DisplayName "PZ Server (Docker)"
+```
+Debe mostrar `True` en `Enabled`.
+
+Si tienes antivirus de terceros con firewall propio (Norton, Kaspersky, McAfee, Bitdefender, ESET, etc.), abre los mismos puertos en su panel tambien.
 
 ## Como modificar la configuracion
 
@@ -214,11 +266,8 @@ Tambien puedes pulsar el boton "Reiniciar servidor" en el panel.
 ### El juego cliente dice "The server failed to respond" o no encuentra el server
 
 1. **Todos en la misma build**: Steam > Project Zomboid > Propiedades > Betas > **unstable - Build 42 Unstable**. Si alguno esta en `public` (B41 estable), no podra conectar.
-2. **Firewall de Windows**: comprueba que el firewall no este bloqueando UDP 16261. Docker Desktop deberia crear reglas automaticas (`Docker Desktop Backend` con `UDP Any`). Si no estan, anade una regla manual:
-   ```
-   New-NetFirewallRule -DisplayName "PZ Server" -Direction Inbound -Protocol UDP -LocalPort 16261,16262,8766,8767 -Action Allow
-   ```
-3. **Pruebas locales**: conecta a `127.0.0.1:16261`. Si funciona local pero no desde la IP LAN, el problema es firewall o router.
+2. **Firewall de Windows**: comprueba que el firewall no este bloqueando UDP 16261. Ejecuta la regla del apartado ["Requisito de firewall"](#requisito-de-firewall-obligatorio-para-lan-e-internet) arriba.
+3. **Pruebas locales**: conecta a `127.0.0.1:16261`. Si funciona local pero no desde la IP LAN, el problema es firewall (ver punto 2) o perfil de red Public.
 4. **Pruebas remotas**: abre los puertos en tu router (seccion "Desde Internet" arriba). Si tienes CGNAT, no funcionara.
 
 ### El server arranca pero crashea al guardar el INI desde el panel

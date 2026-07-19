@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>PZ Web Panel</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script>
-setTimeout(() => location.reload(), 15000);
-</script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
 <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
@@ -16,23 +13,65 @@ setTimeout(() => location.reload(), 15000);
     <p class="text-xs text-slate-400">Usuario: {{ user }}</p>
   </div>
   <div class="flex items-center gap-3">
-    <a href="/editor?file={{ ini_name }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">Editor avanzado</a>
+    <a href="/editor?file={{ ini_name }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">Editor raw</a>
     <a href="/editor?file={{ sandbox_name }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">{{ sandbox_name }}</a>
   </div>
 </header>
 
+<div id="restart-overlay"
+     class="hidden fixed inset-x-0 top-0 z-50 shadow-2xl backdrop-blur-sm transition-colors duration-300
+            bg-amber-900/95 border-b-4 border-amber-400">
+  <div class="max-w-5xl mx-auto px-6 py-5">
+    <div class="flex items-start gap-4">
+      <div class="flex-shrink-0 mt-1">
+        <svg id="overlay-icon-spin" class="animate-spin h-7 w-7 text-amber-300"
+             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+        <svg id="overlay-icon-ok" class="hidden h-7 w-7 text-emerald-300"
+             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <svg id="overlay-icon-err" class="hidden h-7 w-7 text-red-300"
+             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between">
+          <h3 id="overlay-title" class="text-lg font-bold text-white">Guardando cambios...</h3>
+          <button id="overlay-close" type="button" onclick="hideOverlay()"
+                  class="hidden text-amber-200 hover:text-white text-xl px-2 leading-none">x</button>
+        </div>
+        <p id="overlay-phase" class="text-sm text-amber-100/90 mt-0.5">Paso 1 de 3: escribiendo INI...</p>
+        <div id="overlay-progress" class="mt-2 h-1.5 bg-black/30 rounded-full overflow-hidden">
+          <div id="overlay-bar" class="h-full bg-amber-300 transition-all duration-500" style="width: 10%"></div>
+        </div>
+        <details class="mt-3" id="overlay-logs-wrap">
+          <summary class="text-xs text-amber-200/80 cursor-pointer hover:text-amber-100 select-none">
+            Ver logs en tiempo real (clic para expandir)
+          </summary>
+          <pre id="overlay-logs" class="mt-2 text-xs bg-black/60 border border-amber-700/60 rounded p-3 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-amber-100/90"></pre>
+        </details>
+        <p id="overlay-saved" class="hidden mt-2 text-xs text-emerald-200">
+          Cambios guardados en <code>{{ ini_name }}</code>. La ventana se cierra automaticamente en <span id="overlay-countdown">5</span>s.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
 
-  {% if message %}
-  <div class="bg-emerald-900/40 border border-emerald-700 text-emerald-200 px-4 py-3 rounded">{{ message }}</div>
+  {% if request.query_params.get('msg') %}
+  <div id="flash-msg" class="bg-emerald-900/40 border border-emerald-700 text-emerald-200 px-4 py-3 rounded">
+    {{ request.query_params.get('msg') }}
+  </div>
   {% endif %}
 
   <section class="bg-gradient-to-br from-indigo-900/70 to-slate-800 rounded-lg border border-indigo-700/60 p-5 space-y-4">
-    <h2 class="text-lg font-semibold flex items-center gap-2">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-      Informacion de conexion
-    </h2>
-
+    <h2 class="text-lg font-semibold">Informacion de conexion</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <p class="text-xs uppercase tracking-wider text-slate-300 mb-1">LAN (misma red WiFi)</p>
@@ -45,19 +84,17 @@ setTimeout(() => location.reload(), 15000);
         </div>
         {% if not lan_from_override %}
         <p class="text-xs text-amber-300 mt-2 leading-relaxed">
-          Detectada por el contenedor. Si no coincide con la IP que ven tus amigos,
-          <code class="bg-black/50 px-1 rounded">ipconfig</code> en Windows y define
-          <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
+          Detectada por el contenedor. Si no coincide, ejecuta
+          <code class="bg-black/50 px-1 rounded">ipconfig</code> en Windows
+          y define <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
         </p>
         {% endif %}
         {% else %}
         <p class="text-sm text-amber-300 bg-amber-900/40 border border-amber-700 rounded px-3 py-2">
-          No se pudo detectar. Ejecuta <code class="bg-black/50 px-1 rounded">ipconfig</code> en Windows
-          y define <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
+          No se pudo detectar. Define <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
         </p>
         {% endif %}
       </div>
-
       <div>
         <p class="text-xs uppercase tracking-wider text-slate-300 mb-1">Internet (WAN)</p>
         {% if public_ip_available %}
@@ -68,39 +105,15 @@ setTimeout(() => location.reload(), 15000);
                   class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded whitespace-nowrap">Copiar</button>
         </div>
         <p class="text-xs text-amber-300 mt-2 leading-relaxed">
-          Requiere abrir en tu router los puertos UDP
-          <strong>16261, 16262, 8766, 8767</strong> apuntando a la IP local de tu PC.
+          Requiere abrir en el router UDP <strong>16261, 16262, 8766, 8767</strong>.
           Si tu ISP usa CGNAT, no funcionara aunque la IP aparezca aqui.
         </p>
         {% else %}
-        <div class="text-sm text-amber-300 bg-amber-900/40 border border-amber-700 rounded px-3 py-2 leading-relaxed">
-          No se pudo detectar la IP publica (sin salida a internet o api.ipify.org caido).
-          <br/>Opciones:
-          <ul class="list-disc ml-5 mt-1 text-xs space-y-0.5">
-            <li>Comprueba que el panel tiene salida a internet.</li>
-            <li>O define <code class="bg-black/50 px-1 rounded">PUBLIC_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.</li>
-          </ul>
+        <div class="text-sm text-amber-300 bg-amber-900/40 border border-amber-700 rounded px-3 py-2">
+          No se detecto la IP publica. Define <code class="bg-black/50 px-1 rounded">PUBLIC_IP</code> en
+          <code class="bg-black/50 px-1 rounded">.env</code> o revisa que el panel tenga salida a internet.
         </div>
         {% endif %}
-      </div>
-    </div>
-
-    <div class="border-t border-indigo-700/40 pt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-      <div>
-        <p class="text-xs text-slate-400">Nombre</p>
-        <p class="font-medium truncate" title="{{ server.get('PublicName','') }}">{{ server.get('PublicName') or '(sin nombre)' }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-slate-400">Mapa</p>
-        <p class="font-medium">{{ server.get('Map') or 'Muldraugh, KY' }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-slate-400">Max jugadores</p>
-        <p class="font-medium">{{ server.get('MaxPlayers', '32') }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-slate-400">Admin in-game</p>
-        <p class="font-medium"><code class="bg-black/50 px-1.5 py-0.5 rounded">admin</code></p>
       </div>
     </div>
   </section>
@@ -111,85 +124,73 @@ setTimeout(() => location.reload(), 15000);
       <h2 class="text-lg font-semibold">
         {% if status.running %}Servidor en linea{% else %}Servidor detenido{% endif %}
       </h2>
-      {% if status.started %}
-      <span class="text-xs text-slate-400">(iniciado {{ status.started }})</span>
-      {% endif %}
-      <form method="post" action="/api/restart" class="ml-auto" onsubmit="return confirm('Reiniciar servidor ahora?')">
-        <button class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-3 py-2 rounded">Reiniciar servidor</button>
+      {% if status.started %}<span class="text-xs text-slate-400">(iniciado {{ status.started }})</span>{% endif %}
+      <form id="restart-form" method="post" action="/api/restart" class="ml-auto"
+            onsubmit="event.preventDefault(); doRestart();">
+        <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-3 py-2 rounded">
+          Reiniciar servidor
+        </button>
       </form>
     </div>
-    {% if status.error %}
-    <p class="mt-2 text-sm text-red-400">{{ status.error }}</p>
-    {% endif %}
+    {% if status.error %}<p class="mt-2 text-sm text-red-400">{{ status.error }}</p>{% endif %}
   </section>
 
-  <form method="post" action="/save" class="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-5">
-    <h2 class="text-lg font-semibold">Configuracion del servidor</h2>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <label class="block">
-        <span class="text-sm text-slate-300">Nombre del servidor</span>
-        <input name="name" required value="{{ server.get('PublicName', server.get('Name','')) }}"
-               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
-      </label>
-
-      <label class="block">
-        <span class="text-sm text-slate-300">Max jugadores</span>
-        <input type="number" name="max_players" min="1" max="64" value="{{ server.get('MaxPlayers','8') }}"
-               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
-      </label>
+  <section class="bg-slate-800 rounded-lg border border-slate-700">
+    <div class="border-b border-slate-700 overflow-x-auto" id="tab-bar">
+      <nav class="flex min-w-max">
+        {% for key in schema_keys %}
+        <button type="button" data-tab="{{ key }}"
+                class="px-4 py-3 text-sm whitespace-nowrap border-b-2 tab-btn
+                       {% if key == active_tab %}border-emerald-400 text-emerald-300 font-semibold
+                       {% else %}border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500{% endif %}">
+          {{ schema[key].title }}
+        </button>
+        {% endfor %}
+      </nav>
     </div>
 
-    <label class="block">
-      <span class="text-sm text-slate-300">Descripcion publica</span>
-      <textarea name="description" rows="2"
-                class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2">{{ server.get('PublicDescription', server.get('Description','')) }}</textarea>
-    </label>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <label class="block">
-        <span class="text-sm text-slate-300">Password del servidor (vacio = sin password)</span>
-        <input name="password" value="{{ server.get('Password','') }}"
-               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
-      </label>
-      <div class="block">
-        <span class="text-sm text-slate-300">Password de admin</span>
-        <p class="mt-1 text-xs text-slate-400 bg-slate-900 border border-slate-700 rounded px-3 py-2">
-          Para cambiarla, edita <code>ADMIN_PASSWORD</code> en <code>.env</code> y reinicia el servidor.
-        </p>
+    {% for key, cat in schema.items() %}
+    <form method="post" action="/save" data-form="{{ key }}" data-tab-form="{{ key }}"
+          class="tab-form p-6 space-y-4 {% if key != active_tab %}hidden{% endif %}">
+      <input type="hidden" name="_category" value="{{ key }}" />
+      <div class="flex items-baseline justify-between">
+        <h3 class="text-base font-semibold text-slate-200">{{ cat.title }}</h3>
+        <span class="text-xs text-slate-500">{{ cat.fields|length }} opciones</span>
       </div>
-    </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <label class="flex items-center gap-2">
-        <input type="hidden" name="public" id="public-hidden" value="{{ 'true' if server.get('Public','false')|lower == 'true' else 'false' }}" />
-        <input type="checkbox" id="public-cb" onchange="document.getElementById('public-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('Public','false')|lower == 'true' %}checked{% endif %} />
-        <span class="text-sm">Publico (lista global)</span>
-      </label>
-      <label class="flex items-center gap-2">
-        <input type="hidden" name="pvp" id="pvp-hidden" value="{{ 'true' if server.get('PVP','false')|lower == 'true' else 'false' }}" />
-        <input type="checkbox" id="pvp-cb" onchange="document.getElementById('pvp-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PVP','false')|lower == 'true' %}checked{% endif %} />
-        <span class="text-sm">PVP</span>
-      </label>
-      <label class="flex items-center gap-2">
-        <input type="hidden" name="pause_empty" id="pause_empty-hidden" value="{{ 'true' if server.get('PauseEmpty','true')|lower == 'true' else 'false' }}" />
-        <input type="checkbox" id="pause_empty-cb" onchange="document.getElementById('pause_empty-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PauseEmpty','true')|lower == 'true' %}checked{% endif %} />
-        <span class="text-sm">Pausa si vacio</span>
-      </label>
-      <label class="flex items-center gap-2">
-        <input type="hidden" name="pause_day" id="pause_day-hidden" value="{{ 'true' if server.get('PauseDay','true')|lower == 'true' else 'false' }}" />
-        <input type="checkbox" id="pause_day-cb" onchange="document.getElementById('pause_day-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PauseDay','true')|lower == 'true' %}checked{% endif %} />
-        <span class="text-sm">Pausa de dia</span>
-      </label>
-    </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+        {% from "macros.html" import field %}
+        {% for f in cat.fields %}
+          {{ field(f, server.get(f.key, '')) }}
+        {% endfor %}
+      </div>
 
-    <div class="flex items-center gap-3 pt-2">
-      <button class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded">
-        Guardar y reiniciar
-      </button>
-      <span class="text-xs text-slate-400">Aplica cambios en <code>servertest.ini</code> y reinicia el contenedor.</span>
+      <div class="pt-4 border-t border-slate-700 flex items-center gap-3">
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded">
+          Guardar y reiniciar
+        </button>
+        <span class="text-xs text-slate-400">
+          Solo se aplican los cambios de esta pestana. Modifica <code>{{ ini_name }}</code>
+          y reinicia el contenedor.
+        </span>
+      </div>
+    </form>
+    {% endfor %}
+  </section>
+
+  <details class="bg-slate-800 rounded-lg border border-slate-700">
+    <summary class="px-5 py-3 cursor-pointer text-sm text-slate-300 hover:text-slate-100">
+      Opciones no expuestas en pestanas (visibles via Editor raw)
+    </summary>
+    <div class="px-5 pb-4 text-xs text-slate-400 space-y-1">
+      <p>Estas claves viven en <code>{{ ini_name }}</code> pero no estan en el schema del panel
+      (por ahora). Puedes editarlas via el boton <strong>Editor raw</strong> arriba.</p>
+      <p class="font-mono mt-2 break-words text-slate-500">
+        Map, Mods, WorkshopItems, Seed, ResetID, ServerPlayerID, SteamPort1, SteamPort2,
+        SpawnItems ya incluido arriba, SandboxVars.<code>{{ ini_name }}</code>, etc.
+      </p>
     </div>
-  </form>
+  </details>
 
   <section class="bg-slate-800 rounded-lg border border-slate-700 p-5">
     <div class="flex items-center justify-between mb-3">
@@ -199,9 +200,229 @@ setTimeout(() => location.reload(), 15000);
     <pre id="logs" class="text-xs bg-black/50 border border-slate-700 rounded p-3 h-72 overflow-auto whitespace-pre-wrap">{{ logs }}</pre>
   </section>
 
+  <div class="text-center text-xs text-slate-500 pt-4">
+    <button onclick="refreshPage()" class="hover:text-slate-300 underline">Refrescar pagina</button>
+    <span class="mx-2">|</span>
+    <span>Auto-refresca cada 30s cuando no hay cambios pendientes</span>
+  </div>
+
 </main>
 
 <script>
+const overlay = document.getElementById('restart-overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayPhase = document.getElementById('overlay-phase');
+const overlayBar = document.getElementById('overlay-bar');
+const overlayLogs = document.getElementById('overlay-logs');
+const overlaySaved = document.getElementById('overlay-saved');
+const overlayCountdown = document.getElementById('overlay-countdown');
+const overlayClose = document.getElementById('overlay-close');
+const overlayWrap = document.getElementById('overlay-logs-wrap');
+
+function setOverlayIcon(state) {
+  document.getElementById('overlay-icon-spin').classList.toggle('hidden', state !== 'spinning');
+  document.getElementById('overlay-icon-ok').classList.toggle('hidden', state !== 'ok');
+  document.getElementById('overlay-icon-err').classList.toggle('hidden', state !== 'error');
+}
+
+function setOverlayColor(klass) {
+  overlay.classList.remove('bg-amber-900/95', 'border-amber-400', 'bg-emerald-900/95', 'border-emerald-400', 'bg-red-900/95', 'border-red-400');
+  overlay.classList.add(klass.bg, klass.border);
+}
+
+function showOverlay(title, phase, progressPercent) {
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = title;
+  overlayPhase.textContent = phase || '';
+  overlayBar.style.width = (progressPercent || 0) + '%';
+  overlayLogs.textContent = '';
+  overlaySaved.classList.add('hidden');
+  overlayClose.classList.add('hidden');
+  overlayWrap.classList.remove('hidden');
+  setOverlayIcon('spinning');
+  setOverlayColor({bg: 'bg-amber-900/95', border: 'border-amber-400'});
+  overlayCountdown.textContent = '5';
+}
+
+function showSuccess(title, phase) {
+  setOverlayIcon('ok');
+  setOverlayColor({bg: 'bg-emerald-900/95', border: 'border-emerald-400'});
+  overlayTitle.textContent = title || 'Listo';
+  overlayPhase.textContent = phase || '';
+  overlayBar.style.width = '100%';
+  overlaySaved.classList.remove('hidden');
+  overlayClose.classList.remove('hidden');
+  let sec = 5;
+  overlayCountdown.textContent = sec;
+  const iv = setInterval(() => {
+    sec--;
+    overlayCountdown.textContent = sec;
+    if (sec <= 0) {
+      clearInterval(iv);
+      hideOverlay();
+      location.reload();
+    }
+  }, 1000);
+}
+
+function showError(title, phase) {
+  setOverlayIcon('error');
+  setOverlayColor({bg: 'bg-red-900/95', border: 'border-red-400'});
+  overlayTitle.textContent = title || 'Error';
+  overlayPhase.textContent = phase || '';
+  overlayBar.style.width = '100%';
+  overlaySaved.classList.add('hidden');
+  overlayClose.classList.remove('hidden');
+}
+
+function hideOverlay() {
+  overlay.classList.add('hidden');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchLogsRaw(tail) {
+  const r = await fetch('/api/logs?tail=' + (tail || 30));
+  if (!r.ok) return '';
+  return await r.text();
+}
+
+async function fetchStatus() {
+  const r = await fetch('/api/status');
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+function classifyPhase(logs, seconds) {
+  if (logs.includes('Initialising RakNet')) return 'Iniciando RakNet (red)';
+  if (logs.includes('WorldStreamer.create()')) return 'Cargando chunks del mundo';
+  if (logs.includes('ItemConfigurator')) return 'Cargando configuraciones de items';
+  if (logs.includes('IsoMetaGrid.Create')) return 'Generando grid del mapa';
+  if (logs.includes('ErosionGlobals')) return 'Inicializando erosion del terreno';
+  if (logs.includes('ZombiePopulationManager')) return 'Configurando poblacion de zombis';
+  if (logs.includes('PersistentOutfits')) return 'Cargando outfits guardados';
+  if (logs.includes('WorldDictionary.init')) return 'Cargando diccionario del mundo';
+  if (logs.includes('*** SERVER STARTED')) return 'Servidor aceptando conexiones';
+  if (seconds < 5) return 'Esperando a que el contenedor se detenga';
+  if (seconds < 25) return 'Detenido, iniciando contenedor';
+  if (seconds < 50) return 'Contenedor levantado, JVM arrancando';
+  if (seconds < 110) return 'Mundo generandose';
+  return 'Inicializando subsistemas';
+}
+
+async function pollRestart() {
+  showOverlay('Reiniciando contenedor...', 'Paso 2/3: el contenedor PZ se esta deteniendo y arrancando de nuevo (1-2 min)...', 35);
+
+  const t0 = Date.now();
+  let sawStopped = false;
+  let lastPhase = '';
+
+  for (let i = 0; i < 90; i++) {
+    await sleep(2000);
+    const elapsed = Math.floor((Date.now() - t0) / 1000);
+
+    try {
+      const [status, logs] = await Promise.all([fetchStatus(), fetchLogsRaw(20)]);
+      if (!status) continue;
+
+      overlayLogs.textContent = logs;
+      overlayLogs.scrollTop = overlayLogs.scrollHeight;
+
+      const stopped = !status.running;
+      const started = status.started ? new Date(status.started) : null;
+      const uptime = started ? (Date.now() - started.getTime()) / 1000 : 9999;
+      const recentRestart = stopped || (status.running && uptime < 90);
+      const isReady = status.running && (logs.includes('*** SERVER STARTED') || logs.includes('Steam is enabled'));
+
+      const phaseText = `Paso ${isReady ? '3' : stopped ? '2' : '2'} de 3: ${classifyPhase(logs, elapsed)} (${elapsed}s)`;
+      if (phaseText !== lastPhase) {
+        overlayPhase.textContent = phaseText;
+        lastPhase = phaseText;
+      }
+
+      if (status.running && stopped === false && i > 0) {
+        if (!sawStopped) {
+          overlayBar.style.width = '55%';
+          sawStopped = true;
+        }
+        overlayBar.style.width = Math.min(95, 55 + (i * 0.5)) + '%';
+      }
+
+      if (isReady && recentRestart) {
+        overlayBar.style.width = '100%';
+        showSuccess('Servidor reiniciado correctamente', `Paso 3 de 3: listo. El server acepta conexiones desde ${uptime < 5 ? 'ahora' : 'hace ' + Math.round(uptime) + 's'}.`);
+        return;
+      }
+    } catch (e) {
+      overlayPhase.textContent = `Error consultando estado: ${e.message}`;
+    }
+  }
+
+  showError('Tiempo agotado', 'El reinicio tardo mas de 3 min. Revisa los logs manualmente con scripts/logs.cmd');
+}
+
+async function safeJson(resp) {
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return await resp.json();
+  const text = await resp.text();
+  return { ok: resp.ok, message: text.slice(0, 200) || `HTTP ${resp.status}` };
+}
+
+async function saveWithFeedback(form) {
+  const formData = new FormData(form);
+  const cat = formData.get('_category') || 'cambios';
+  showOverlay('Guardando cambios...', `Paso 1 de 3: escribiendo INI (categoria: ${cat})...`, 5);
+
+  try {
+    const resp = await fetch('/save', {
+      method: 'POST',
+      body: formData,
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      redirect: 'manual',
+    });
+    const data = await safeJson(resp);
+    if (data.ok === false) {
+      showError('Error guardando', data.message || 'Error desconocido');
+      return;
+    }
+
+    overlayBar.style.width = '25%';
+    overlayPhase.textContent = 'INI actualizado correctamente.';
+    await sleep(600);
+    await pollRestart();
+
+  } catch (e) {
+    showError('Error de red', e.message);
+  }
+}
+
+document.querySelectorAll('form[data-tab-form]').forEach(form => {
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    saveWithFeedback(form);
+  });
+});
+
+async function doRestart() {
+  showOverlay('Reiniciando contenedor...', 'Paso 2 de 3: el contenedor PZ se esta reiniciando...', 15);
+  try {
+    const r = await fetch('/api/restart', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      redirect: 'manual',
+    });
+    const data = await safeJson(r);
+    if (data.ok) {
+      await sleep(400);
+      await pollRestart(true);
+    } else {
+      showError('Error al reiniciar', data.message || 'Error desconocido');
+    }
+  } catch (e) {
+    showError('Error de red', e.message);
+  }
+}
+
 async function copyFromInput(btn) {
   const id = btn.getAttribute('data-copy');
   const el = document.getElementById(id);
@@ -228,12 +449,42 @@ document.addEventListener('click', e => {
   }
 });
 
+function activateTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const active = b.getAttribute('data-tab') === name;
+    b.classList.toggle('border-emerald-400', active);
+    b.classList.toggle('text-emerald-300', active);
+    b.classList.toggle('font-semibold', active);
+    b.classList.toggle('border-transparent', !active);
+    b.classList.toggle('text-slate-400', !active);
+  });
+  document.querySelectorAll('form[data-tab-form]').forEach(f => {
+    f.classList.toggle('hidden', f.getAttribute('data-tab-form') !== name);
+  });
+  try {
+    const url = new URL(location.href);
+    url.searchParams.set('tab', name);
+    history.replaceState(null, '', url.toString());
+  } catch {}
+}
+
+document.getElementById('tab-bar').addEventListener('click', e => {
+  const btn = e.target.closest('.tab-btn');
+  if (btn) activateTab(btn.getAttribute('data-tab'));
+});
+
 function fetchLogs() {
   fetch('/api/logs?tail=200')
     .then(r => { if (!r.ok) throw 0; return r.text(); })
     .then(t => { document.getElementById('logs').textContent = t; })
     .catch(() => location.reload());
 }
+
+function refreshPage() {
+  fetch('/api/status').then(r => r.json()).then(() => location.reload()).catch(() => location.reload());
+}
+
+setTimeout(refreshPage, 30000);
 </script>
 </body>
 </html>
