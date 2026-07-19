@@ -1930,3 +1930,4 @@ LOG  : Lua          f:33 st:3,144,575> MOWoodenWalFrame.lua: replacing isoObject
 LOG  : General      f:33 st:3,144,580> ERROR: IsoThumpable not found on square 10844,10148,-1
 LOG  : Lua          f:33 st:3,144,582> MOWoodenWalFrame.lua: replacing isoObject at 10844,10151,-1
 LOG  : General      f:33 st:3,144,585> ERROR: IsoThumpable not found on square 10844,10151,-1
+WARN : ActionSystem f:157 st:3,156,969 at ActionStateContainer.tryInsertChildState> IsoPlayer-3-348782a8-8ce2-4ac6-af38-0372260c8b91> Transition's target state "turning" not supported by parent: "turningmovement180"
