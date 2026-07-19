@@ -1,0 +1,34 @@
+# Environment / secrets
+.env
+
+# Saves (game progress) - regenerate locally
+saves/
+saves/**
+
+# Logs
+*.log
+logs/
+
+# Python
+panel/__pycache__/
+panel/**/__pycache__/
+panel/.venv/
+panel/venv/
+*.pyc
+*.pyo
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Config local generado por PZ al primer arranque
+# (lo dejamos en repo si quieres trackear cambios, pero ignora saves)
+config/serverid.txt
+config/servername.txt
+config/admin.txt
+config/BanList.txt
+config/Whitelist.txt

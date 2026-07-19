@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PZ &mdash; Editor {{ file }}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+<header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <a href="/" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">&larr; Volver</a>
+    <h1 class="text-xl font-bold">Editor: {{ file }}</h1>
+  </div>
+  <form method="get" action="/editor" class="flex items-center gap-2">
+    <select name="file" onchange="this.form.submit()"
+            class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm">
+      {% for f in files %}
+      <option value="{{ f }}" {% if f == file %}selected{% endif %}>{{ f }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-8 space-y-4">
+  {% if request.query_params.get('msg') %}
+  <div class="bg-emerald-900/40 border border-emerald-700 text-emerald-200 px-4 py-3 rounded text-sm">
+    {{ request.query_params.get('msg') }}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/editor" class="space-y-4">
+    <input type="hidden" name="file" value="{{ file }}" />
+    <textarea name="content" rows="34" spellcheck="false"
+              class="w-full bg-black/60 border border-slate-700 rounded p-4 font-mono text-xs">{{ content }}</textarea>
+    <div class="flex items-center gap-3">
+      <button class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded">
+        Guardar y reiniciar servidor
+      </button>
+      <span class="text-xs text-slate-400">
+        Cuidado: editar a mano puede dejar el servidor inutilizable si la sintaxis es invalida.
+      </span>
+    </div>
+  </form>
+</main>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PZ Web Panel</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+setTimeout(() => location.reload(), 15000);
+</script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+<header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+  <div>
+    <h1 class="text-xl font-bold">Project Zomboid &mdash; Panel</h1>
+    <p class="text-xs text-slate-400">Usuario: {{ user }}</p>
+  </div>
+  <div class="flex items-center gap-3">
+    <a href="/editor?file={{ ini_name }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">Editor avanzado</a>
+    <a href="/editor?file={{ sandbox_name }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded">{{ sandbox_name }}</a>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+  {% if message %}
+  <div class="bg-emerald-900/40 border border-emerald-700 text-emerald-200 px-4 py-3 rounded">{{ message }}</div>
+  {% endif %}
+
+  <section class="bg-gradient-to-br from-indigo-900/70 to-slate-800 rounded-lg border border-indigo-700/60 p-5 space-y-4">
+    <h2 class="text-lg font-semibold flex items-center gap-2">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+      Informacion de conexion
+    </h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <p class="text-xs uppercase tracking-wider text-slate-300 mb-1">LAN (misma red WiFi)</p>
+        {% if lan_ip %}
+        <div class="flex gap-2">
+          <input id="lan-input" readonly value="{{ lan_ip }}:{{ server_port }}"
+                 class="flex-1 bg-black/50 border border-slate-700 rounded px-2 py-1.5 font-mono text-sm text-emerald-300" />
+          <button type="button" data-copy="lan-input"
+                  class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded whitespace-nowrap">Copiar</button>
+        </div>
+        {% if not lan_from_override %}
+        <p class="text-xs text-amber-300 mt-2 leading-relaxed">
+          Detectada por el contenedor. Si no coincide con la IP que ven tus amigos,
+          <code class="bg-black/50 px-1 rounded">ipconfig</code> en Windows y define
+          <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
+        </p>
+        {% endif %}
+        {% else %}
+        <p class="text-sm text-amber-300 bg-amber-900/40 border border-amber-700 rounded px-3 py-2">
+          No se pudo detectar. Ejecuta <code class="bg-black/50 px-1 rounded">ipconfig</code> en Windows
+          y define <code class="bg-black/50 px-1 rounded">LOCAL_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.
+        </p>
+        {% endif %}
+      </div>
+
+      <div>
+        <p class="text-xs uppercase tracking-wider text-slate-300 mb-1">Internet (WAN)</p>
+        {% if public_ip_available %}
+        <div class="flex gap-2">
+          <input id="wan-input" readonly value="{{ public_ip }}:{{ server_port }}"
+                 class="flex-1 bg-black/50 border border-slate-700 rounded px-2 py-1.5 font-mono text-sm text-emerald-300" />
+          <button type="button" data-copy="wan-input"
+                  class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded whitespace-nowrap">Copiar</button>
+        </div>
+        <p class="text-xs text-amber-300 mt-2 leading-relaxed">
+          Requiere abrir en tu router los puertos UDP
+          <strong>16261, 16262, 8766, 8767</strong> apuntando a la IP local de tu PC.
+          Si tu ISP usa CGNAT, no funcionara aunque la IP aparezca aqui.
+        </p>
+        {% else %}
+        <div class="text-sm text-amber-300 bg-amber-900/40 border border-amber-700 rounded px-3 py-2 leading-relaxed">
+          No se pudo detectar la IP publica (sin salida a internet o api.ipify.org caido).
+          <br/>Opciones:
+          <ul class="list-disc ml-5 mt-1 text-xs space-y-0.5">
+            <li>Comprueba que el panel tiene salida a internet.</li>
+            <li>O define <code class="bg-black/50 px-1 rounded">PUBLIC_IP</code> en <code class="bg-black/50 px-1 rounded">.env</code>.</li>
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="border-t border-indigo-700/40 pt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div>
+        <p class="text-xs text-slate-400">Nombre</p>
+        <p class="font-medium truncate" title="{{ server.get('PublicName','') }}">{{ server.get('PublicName') or '(sin nombre)' }}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400">Mapa</p>
+        <p class="font-medium">{{ server.get('Map') or 'Muldraugh, KY' }}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400">Max jugadores</p>
+        <p class="font-medium">{{ server.get('MaxPlayers', '32') }}</p>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400">Admin in-game</p>
+        <p class="font-medium"><code class="bg-black/50 px-1.5 py-0.5 rounded">admin</code></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-slate-800 rounded-lg border border-slate-700 p-5">
+    <div class="flex items-center gap-3">
+      <span class="inline-block w-3 h-3 rounded-full {% if status.running %}bg-emerald-400{% else %}bg-red-500{% endif %}"></span>
+      <h2 class="text-lg font-semibold">
+        {% if status.running %}Servidor en linea{% else %}Servidor detenido{% endif %}
+      </h2>
+      {% if status.started %}
+      <span class="text-xs text-slate-400">(iniciado {{ status.started }})</span>
+      {% endif %}
+      <form method="post" action="/api/restart" class="ml-auto" onsubmit="return confirm('Reiniciar servidor ahora?')">
+        <button class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-3 py-2 rounded">Reiniciar servidor</button>
+      </form>
+    </div>
+    {% if status.error %}
+    <p class="mt-2 text-sm text-red-400">{{ status.error }}</p>
+    {% endif %}
+  </section>
+
+  <form method="post" action="/save" class="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-5">
+    <h2 class="text-lg font-semibold">Configuracion del servidor</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="block">
+        <span class="text-sm text-slate-300">Nombre del servidor</span>
+        <input name="name" required value="{{ server.get('PublicName', server.get('Name','')) }}"
+               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
+      </label>
+
+      <label class="block">
+        <span class="text-sm text-slate-300">Max jugadores</span>
+        <input type="number" name="max_players" min="1" max="64" value="{{ server.get('MaxPlayers','8') }}"
+               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
+      </label>
+    </div>
+
+    <label class="block">
+      <span class="text-sm text-slate-300">Descripcion publica</span>
+      <textarea name="description" rows="2"
+                class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2">{{ server.get('PublicDescription', server.get('Description','')) }}</textarea>
+    </label>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="block">
+        <span class="text-sm text-slate-300">Password del servidor (vacio = sin password)</span>
+        <input name="password" value="{{ server.get('Password','') }}"
+               class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" />
+      </label>
+      <div class="block">
+        <span class="text-sm text-slate-300">Password de admin</span>
+        <p class="mt-1 text-xs text-slate-400 bg-slate-900 border border-slate-700 rounded px-3 py-2">
+          Para cambiarla, edita <code>ADMIN_PASSWORD</code> en <code>.env</code> y reinicia el servidor.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <label class="flex items-center gap-2">
+        <input type="hidden" name="public" id="public-hidden" value="{{ 'true' if server.get('Public','false')|lower == 'true' else 'false' }}" />
+        <input type="checkbox" id="public-cb" onchange="document.getElementById('public-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('Public','false')|lower == 'true' %}checked{% endif %} />
+        <span class="text-sm">Publico (lista global)</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="hidden" name="pvp" id="pvp-hidden" value="{{ 'true' if server.get('PVP','false')|lower == 'true' else 'false' }}" />
+        <input type="checkbox" id="pvp-cb" onchange="document.getElementById('pvp-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PVP','false')|lower == 'true' %}checked{% endif %} />
+        <span class="text-sm">PVP</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="hidden" name="pause_empty" id="pause_empty-hidden" value="{{ 'true' if server.get('PauseEmpty','true')|lower == 'true' else 'false' }}" />
+        <input type="checkbox" id="pause_empty-cb" onchange="document.getElementById('pause_empty-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PauseEmpty','true')|lower == 'true' %}checked{% endif %} />
+        <span class="text-sm">Pausa si vacio</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="hidden" name="pause_day" id="pause_day-hidden" value="{{ 'true' if server.get('PauseDay','true')|lower == 'true' else 'false' }}" />
+        <input type="checkbox" id="pause_day-cb" onchange="document.getElementById('pause_day-hidden').value = this.checked ? 'true' : 'false'" {% if server.get('PauseDay','true')|lower == 'true' %}checked{% endif %} />
+        <span class="text-sm">Pausa de dia</span>
+      </label>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded">
+        Guardar y reiniciar
+      </button>
+      <span class="text-xs text-slate-400">Aplica cambios en <code>servertest.ini</code> y reinicia el contenedor.</span>
+    </div>
+  </form>
+
+  <section class="bg-slate-800 rounded-lg border border-slate-700 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-semibold">Logs recientes</h2>
+      <button onclick="fetchLogs()" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded">Refrescar</button>
+    </div>
+    <pre id="logs" class="text-xs bg-black/50 border border-slate-700 rounded p-3 h-72 overflow-auto whitespace-pre-wrap">{{ logs }}</pre>
+  </section>
+
+</main>
+
+<script>
+async function copyFromInput(btn) {
+  const id = btn.getAttribute('data-copy');
+  const el = document.getElementById(id);
+  if (!el) return;
+  try {
+    await navigator.clipboard.writeText(el.value);
+  } catch {
+    el.select();
+    document.execCommand('copy');
+  }
+  const prev = btn.textContent;
+  btn.textContent = 'Copiado!';
+  btn.classList.add('bg-emerald-600');
+  setTimeout(() => {
+    btn.textContent = prev;
+    btn.classList.remove('bg-emerald-600');
+  }, 1200);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (b) {
+    e.preventDefault();
+    copyFromInput(b);
+  }
+});
+
+function fetchLogs() {
+  fetch('/api/logs?tail=200')
+    .then(r => { if (!r.ok) throw 0; return r.text(); })
+    .then(t => { document.getElementById('logs').textContent = t; })
+    .catch(() => location.reload());
+}
+</script>
+</body>
+</html>

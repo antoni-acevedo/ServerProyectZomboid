@@ -1,0 +1,59 @@
+services:
+  zomboid:
+    image: danixu86/project-zomboid-dedicated-server:latest-unstable
+    container_name: pz-zomboid
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-16261}:16261/udp"
+      - "${SERVER_PORT2:-16262}:16262/udp"
+      - "8766:8766/udp"
+      - "8767:8767/udp"
+    environment:
+      - LANG=en_EN.UTF-8
+      - NOSTEAM=False
+      - MODFOLDERS=workshop,steam,mods
+      - DEBUG=False
+      - ADMINUSERNAME=admin
+      - ADMINPASSWORD=${ADMIN_PASSWORD}
+      - SERVERNAME=
+      - IP=
+      - PORT=${SERVER_PORT:-16261}
+      - UDPPORT=${SERVER_PORT2:-16262}
+      - STEAMVAC=True
+      - MEMORY=${SERVER_MEMORY:-2048m}
+      - PUBLIC=${SERVER_PUBLIC:-false}
+      - PASSWORD=${SERVER_PASSWORD:-}
+      - DISPLAYNAME=${SERVER_PUBLIC_NAME}
+      - RCONPASSWORD=${RCON_PASSWORD:-}
+      - MOD_IDS=
+      - WORKSHOP_IDS=
+      - SELF_MANAGED_MODS=true
+    volumes:
+      - ./pzdata:/home/steam/Zomboid
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f ProjectZomboid || pgrep -f java || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
+
+  panel:
+    build:
+      context: ./panel
+      dockerfile: Dockerfile
+    container_name: pz-panel
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./pzdata:/data:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DATA_DIR=/data
+      - SERVER_INI_NAME=${SERVER_INI_NAME:-servertest.ini}
+      - SANDBOX_NAME=${SANDBOX_NAME:-servertest_SandboxVars.lua}
+      - ZOMBOID_CONTAINER_NAME=pz-zomboid
+      - PANEL_USERNAME=${PANEL_USERNAME}
+      - PANEL_PASSWORD=${PANEL_PASSWORD}
+    depends_on:
+      - zomboid
