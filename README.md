@@ -102,6 +102,31 @@ La primera vez tarda unos minutos (descarga la imagen ~2.3 GB). Las siguientes s
 4. Escribir `IP:16261` (ej: `192.168.1.50:16261` o `83.45.123.78:16261`).
 5. Si pusiste `SERVER_PASSWORD` en `.env`, te la pedira al entrar.
 
+### Requisito de firewall (obligatorio para LAN e Internet)
+
+`localhost` (127.0.0.1) funciona porque Windows no aplica firewall al loopback. Para conexiones desde la IP LAN o desde Internet, hace falta abrir los puertos UDP en Windows Defender Firewall. **Solo hay que hacerlo una vez por maquina**.
+
+Abrir **PowerShell como Administrador** y ejecutar:
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "PZ Server (Docker)" `
+  -Direction Inbound `
+  -Protocol UDP `
+  -LocalPort 16261,16262,8766,8767 `
+  -Action Allow `
+  -Profile Any `
+  -Enabled True
+```
+
+Verificar que esta activa:
+```powershell
+Get-NetFirewallRule -DisplayName "PZ Server (Docker)"
+```
+Debe mostrar `True` en `Enabled`.
+
+Si tienes antivirus de terceros con firewall propio (Norton, Kaspersky, McAfee, Bitdefender, ESET, etc.), abre los mismos puertos en su panel tambien.
+
 ## Como modificar la configuracion
 
 ### Opcion A: Panel web (recomendado)
@@ -214,11 +239,8 @@ Tambien puedes pulsar el boton "Reiniciar servidor" en el panel.
 ### El juego cliente dice "The server failed to respond" o no encuentra el server
 
 1. **Todos en la misma build**: Steam > Project Zomboid > Propiedades > Betas > **unstable - Build 42 Unstable**. Si alguno esta en `public` (B41 estable), no podra conectar.
-2. **Firewall de Windows**: comprueba que el firewall no este bloqueando UDP 16261. Docker Desktop deberia crear reglas automaticas (`Docker Desktop Backend` con `UDP Any`). Si no estan, anade una regla manual:
-   ```
-   New-NetFirewallRule -DisplayName "PZ Server" -Direction Inbound -Protocol UDP -LocalPort 16261,16262,8766,8767 -Action Allow
-   ```
-3. **Pruebas locales**: conecta a `127.0.0.1:16261`. Si funciona local pero no desde la IP LAN, el problema es firewall o router.
+2. **Firewall de Windows**: comprueba que el firewall no este bloqueando UDP 16261. Ejecuta la regla del apartado ["Requisito de firewall"](#requisito-de-firewall-obligatorio-para-lan-e-internet) arriba.
+3. **Pruebas locales**: conecta a `127.0.0.1:16261`. Si funciona local pero no desde la IP LAN, el problema es firewall (ver punto 2) o perfil de red Public.
 4. **Pruebas remotas**: abre los puertos en tu router (seccion "Desde Internet" arriba). Si tienes CGNAT, no funcionara.
 
 ### El server arranca pero crashea al guardar el INI desde el panel
