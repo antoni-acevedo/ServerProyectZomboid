@@ -1,11 +1,21 @@
 # Environment / secrets
 .env
 
-# Saves (game progress) - regenerate locally
-saves/
-saves/**
+# Runtime data y saves (regenerables localmente; grandes y especificos de cada instancia)
+pzdata/Saves/
+pzdata/Logs/
+pzdata/backups/
+pzdata/Crafting/
+pzdata/messaging/
+pzdata/db/
+pzdata/server-console.txt
 
-# Logs
+# Files del server que se autogeneran y dependen de la instancia
+pzdata/Server/servertest.ini
+pzdata/Server/servertest_*.lua
+pzdata/Server/servertest_*spawn*.lua
+
+# Logs sueltos
 *.log
 logs/
 
@@ -24,11 +34,3 @@ panel/venv/
 *.swo
 .DS_Store
 Thumbs.db
-
-# Config local generado por PZ al primer arranque
-# (lo dejamos en repo si quieres trackear cambios, pero ignora saves)
-config/serverid.txt
-config/servername.txt
-config/admin.txt
-config/BanList.txt
-config/Whitelist.txt
