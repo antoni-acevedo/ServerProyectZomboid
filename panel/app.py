@@ -10,6 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Plai
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
+from schema import SCHEMA
+
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 SERVER_INI_NAME = os.getenv("SERVER_INI_NAME", "servertest.ini")
 SANDBOX_NAME = os.getenv("SANDBOX_NAME", "servertest_SandboxVars.lua")
@@ -191,38 +193,43 @@ def index(request: Request, user: str = Depends(check_credentials)):
             "public_ip_available": bool(public_ip) and public_status != "unavailable",
             "public_ip_status": public_status,
             "server_port": server_port,
+            "schema": SCHEMA,
+            "schema_keys": list(SCHEMA.keys()),
+            "active_tab": request.query_params.get("tab") or "identity",
         },
     )
 
 
 @app.post("/save")
-def save(
-    name: str = Form(...),
-    description: str = Form(""),
-    public: str = Form("false"),
-    max_players: int = Form(8),
-    password: str = Form(""),
-    pvp: str = Form("false"),
-    pause_empty: str = Form("false"),
-    pause_day: str = Form("false"),
-    user: str = Depends(check_credentials),
-):
-    def b(v: str) -> str:
-        return "true" if str(v).lower() == "true" else "false"
+async def save(request: Request, user: str = Depends(check_credentials)):
+    """Save settings for one tab. Reads all form fields, applies only those
+    belonging to the saved category (others are ignored). Restarts the server.
+    """
+    body = await request.form()
+    category = body.get("_category", "")
+    if category not in SCHEMA:
+        return RedirectResponse(url="/?msg=Pestana+invalida", status_code=303)
 
-    update_ini(SERVER_INI, {
-        "PublicName": name,
-        "PublicDescription": description,
-        "Public": b(public),
-        "MaxPlayers": str(max_players),
-        "Password": password,
-        "PVP": b(pvp),
-        "PauseEmpty": b(pause_empty),
-    })
+    updates: dict[str, str] = {}
+    valid_keys = {f["key"] for f in SCHEMA[category]["fields"]}
+    for k, v in body.multi_items():
+        if k in valid_keys:
+            value = str(v)
+            if value.lower() == "true":
+                value = "true"
+            elif value.lower() == "false":
+                value = "false"
+            updates[k] = value
+
+    if updates:
+        update_ini(SERVER_INI, updates)
 
     ok, msg = restart_server()
-    qs = "msg=" + ("Servidor reiniciado tras guardar." if ok else f"Guardado, pero fallo reinicio: {msg}")
-    return RedirectResponse(url=f"/?{qs}", status_code=303)
+    if ok:
+        status = "Guardado y servidor reiniciado."
+    else:
+        status = f"Guardado, pero el reinicio fallo: {msg}"
+    return RedirectResponse(url=f"/?tab={category}&msg={status.replace(' ', '+')}", status_code=303)
 
 
 @app.get("/editor", response_class=HTMLResponse)
