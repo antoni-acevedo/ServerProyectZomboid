@@ -55,5 +55,7 @@ services:
       - ZOMBOID_CONTAINER_NAME=pz-zomboid
       - PANEL_USERNAME=${PANEL_USERNAME}
       - PANEL_PASSWORD=${PANEL_PASSWORD}
+      - LOCAL_IP=${LOCAL_IP:-}
+      - PUBLIC_IP=${PUBLIC_IP:-}
     depends_on:
       - zomboid

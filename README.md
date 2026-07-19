@@ -94,6 +94,33 @@ La primera vez tarda unos minutos (descarga la imagen ~2.3 GB). Las siguientes s
 
 > **CGNAT**: si tu ISP usa Carrier-Grade NAT (algunos operadores en Espana), la IP publica aparece en el panel pero **no funcionara** para conexiones entrantes. Soluciones: tunel con ZeroTier / Radmin VPN, o un VPS.
 
+### Desplegar en un VPS / servidor dedicado
+
+Si despliegas este proyecto en un VPS (DigitalOcean, Hetzner, AWS, OVH, etc.), los cambios principales son:
+
+1. **IPs en `.env`**:
+   - `LOCAL_IP=` (vacio): en un VPS no hay "LAN" relevante para conectar; todo va por Internet.
+   - `PUBLIC_IP=<IP del VPS>` o vacio: pon la IP que te dio el proveedor (ej: `203.0.113.45`), o dejala vacia para auto-deteccion via `api.ipify.org`.
+
+2. **Firewall del VPS (iptables / ufw)**: en Linux no sirve la regla de Windows. Equivalente:
+   ```bash
+   # ufw (Ubuntu/Debian)
+   sudo ufw allow 16261/udp
+   sudo ufw allow 16262/udp
+   sudo ufw allow 8766/udp
+   sudo ufw allow 8767/udp
+   # o con iptables
+   sudo iptables -A INPUT -p udp --dport 16261 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 16262 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 8766 -j ACCEPT
+   sudo iptables -A INPUT -p udp --dport 8767 -j ACCEPT
+   ```
+   La mayoria de proveedores de VPS tienen un firewall externo (security group) ademas del interno; abrilos en los dos sitios.
+
+3. **Panel web**: por defecto escucha en `127.0.0.1:8080`. Para acceder desde fuera, configura un reverse proxy (nginx/caddy) con HTTPS, o cambia el `ports` del servicio `panel` en `docker-compose.yml` a `"8080:8080/tcp"` (sin `127.0.0.1:`). Mas info: [seccion del README o manual de cada proveedor].
+
+4. **Persistencia**: los saves viven en `./pzdata/`. Haz backup regular de esa carpeta.
+
 ### Conectarse al servidor
 
 1. Abrir Project Zomboid en Steam.
