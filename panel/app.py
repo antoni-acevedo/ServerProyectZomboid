@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Depends, Request, status, Form
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, status, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
@@ -201,13 +201,21 @@ def index(request: Request, user: str = Depends(check_credentials)):
 
 
 @app.post("/save")
-async def save(request: Request, user: str = Depends(check_credentials)):
-    """Save settings for one tab. Reads all form fields, applies only those
-    belonging to the saved category (others are ignored). Restarts the server.
+async def save(request: Request, response: Response, user: str = Depends(check_credentials)):
+    """Save settings for one tab, restart the container, return JSON so the
+    page overlay can follow the restart progress live.
+    Accepts either AJAX (expects JSON) or regular form submit (redirects).
     """
+    wants_json = "application/json" in request.headers.get("accept", "") or \
+                 "fetch" in request.headers.get("sec-fetch-mode", "").lower() or \
+                 request.headers.get("x-requested-with") == "XMLHttpRequest"
+
     body = await request.form()
     category = body.get("_category", "")
+    received_keys = list(body.keys())
     if category not in SCHEMA:
+        if wants_json:
+            return JSONResponse({"ok": False, "message": "Pestana invalida", "category": category, "received": received_keys}, status_code=400)
         return RedirectResponse(url="/?msg=Pestana+invalida", status_code=303)
 
     updates: dict[str, str] = {}
@@ -225,6 +233,18 @@ async def save(request: Request, user: str = Depends(check_credentials)):
         update_ini(SERVER_INI, updates)
 
     ok, msg = restart_server()
+    payload = {
+        "ok": ok,
+        "message": msg,
+        "category": category,
+        "updated": len(updates),
+        "valid_keys_count": len(valid_keys),
+        "received_keys": received_keys,
+    }
+
+    if wants_json:
+        return JSONResponse(payload)
+
     if ok:
         status = "Guardado y servidor reiniciado."
     else:
