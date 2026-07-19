@@ -2,6 +2,7 @@ import os
 import secrets
 import socket
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -160,6 +161,46 @@ def restart_server() -> tuple[bool, str]:
     return True, "Servidor reiniciado correctamente."
 
 
+# Estado de operaciones de power en background para evitar clicks duplicados.
+# Permite maximo 5 min por operacion (TTL) por si el thread se cuelga.
+_power_lock = threading.Lock()
+_active_op: dict = {"kind": None, "started_at": 0.0}
+_ACTIVE_OP_TTL = 300
+
+
+def _can_start_op(kind: str) -> tuple[bool, str]:
+    """Reserva la operacion. Devuelve (True, "") si ok; (False, msg) si ya hay una activa."""
+    now = time.time()
+    with _power_lock:
+        if _active_op["kind"] is not None:
+            age = now - (_active_op["started_at"] or 0)
+            if age > _ACTIVE_OP_TTL:
+                # TTL expirado: liberar el lock (probablemente un thread se murio)
+                _active_op["kind"] = None
+                _active_op["started_at"] = 0.0
+            else:
+                return False, f"Ya hay una operacion en curso ({_active_op['kind']}, hace {int(age)}s). Espera a que termine."
+        _active_op["kind"] = kind
+        _active_op["started_at"] = now
+    return True, ""
+
+
+def _finish_op():
+    with _power_lock:
+        _active_op["kind"] = None
+        _active_op["started_at"] = 0.0
+
+
+def _run_in_background(kind: str, args: list[str], timeout: int):
+    """Lanza un comando docker en un thread daemon y libera el lock al acabar."""
+    def _do():
+        try:
+            docker_exec(args, timeout=timeout)
+        finally:
+            _finish_op()
+    threading.Thread(target=_do, daemon=True).start()
+
+
 @app.get("/healthz", include_in_schema=False)
 def healthz():
     return PlainTextResponse("ok")
@@ -302,31 +343,43 @@ def editor_save(
 
 @app.post("/api/restart")
 def api_restart(user: str = Depends(check_credentials)):
-    ok, msg = restart_server()
-    return JSONResponse({"ok": ok, "message": msg, "action": "restart"})
+    """Lanza docker restart en background y responde al instante.
+    Evita timeouts HTTP del navegador/proxy (Dokploy, Traefik, etc.).
+    """
+    ok, msg = _can_start_op("restart")
+    if not ok:
+        return JSONResponse({"ok": False, "message": msg, "action": "restart"}, status_code=409)
+    _run_in_background("restart", ["restart", ZOMBOID_CONTAINER], timeout=120)
+    return JSONResponse({"ok": True, "message": "Orden de reinicio enviada. El contenedor se esta deteniendo y arrancando de nuevo (~30-60s).", "action": "restart"})
 
 
 @app.post("/api/start")
 def api_start(user: str = Depends(check_credentials)):
-    """Inicia el contenedor si esta detenido. Idempotente."""
-    code, out, err = docker_exec(["start", ZOMBOID_CONTAINER], timeout=30)
-    if code == 0:
-        return JSONResponse({"ok": True, "message": "Servidor encendido.", "action": "start"})
-    if "already started" in (err + out).lower() or "no such container" not in err.lower():
-        # docker start devuelve 0 si ya estaba running, o si no existe. Tratar como OK salvo error claro.
-        return JSONResponse({"ok": True, "message": "Servidor ya estaba encendido.", "action": "start"})
-    return JSONResponse({"ok": False, "message": f"Error al encender: {err or out}", "action": "start"})
+    """Lanza docker start en background. Responde al instante."""
+    status = get_status()
+    if status.get("running"):
+        return JSONResponse({"ok": True, "message": "El servidor ya estaba encendido.", "action": "start"})
+    ok, msg = _can_start_op("start")
+    if not ok:
+        return JSONResponse({"ok": False, "message": msg, "action": "start"}, status_code=409)
+    _run_in_background("start", ["start", ZOMBOID_CONTAINER], timeout=30)
+    return JSONResponse({"ok": True, "message": "Orden de encendido enviada. El contenedor JVM esta arrancando (~30-60s).", "action": "start"})
 
 
 @app.post("/api/stop")
 def api_stop(user: str = Depends(check_credentials)):
-    """Detiene el contenedor con SIGTERM (graceful, ~30-60s). Idempotente."""
-    code, out, err = docker_exec(["stop", "--time", "60", ZOMBOID_CONTAINER], timeout=90)
-    if code == 0:
-        return JSONResponse({"ok": True, "message": "Servidor detenido.", "action": "stop"})
-    if "is not running" in (err + out).lower():
+    """Lanza docker stop en background. Responde al instante.
+    Evita timeouts HTTP cuando el JVM tarda en apagarse."""
+    status = get_status()
+    if not status.get("running"):
+        _finish_op()  # limpiar cualquier estado residual por si acaso
         return JSONResponse({"ok": True, "message": "El servidor ya estaba detenido.", "action": "stop"})
-    return JSONResponse({"ok": False, "message": f"Error al detener: {err or out}", "action": "stop"})
+    ok, msg = _can_start_op("stop")
+    if not ok:
+        return JSONResponse({"ok": False, "message": msg, "action": "stop"}, status_code=409)
+    # --time 30: SIGTERM al JVM, espera 30s, despues SIGKILL automatico.
+    _run_in_background("stop", ["stop", "--time", "30", ZOMBOID_CONTAINER], timeout=45)
+    return JSONResponse({"ok": True, "message": "Orden de apagado enviada. Esperando que la JVM termine (~30-60s).", "action": "stop"})
 
 
 @app.get("/api/status")

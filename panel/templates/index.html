@@ -251,7 +251,9 @@ function showOverlay(title, phase, progressPercent) {
   overlayBar.style.width = (progressPercent || 0) + '%';
   overlayLogs.textContent = '';
   overlaySaved.classList.add('hidden');
-  overlayClose.classList.add('hidden');
+  // X visible desde el inicio: el usuario puede cancelar la espera a mano.
+  // Cancelar solo oculta el overlay; la operacion en background del server sigue.
+  overlayClose.classList.remove('hidden');
   overlayWrap.classList.remove('hidden');
   setOverlayIcon('spinning');
   setOverlayColor({bg: 'bg-amber-900/95', border: 'border-amber-400'});
@@ -289,8 +291,13 @@ function showError(title, phase) {
   overlayClose.classList.remove('hidden');
 }
 
+let _pollingAborted = false;
 function hideOverlay() {
   overlay.classList.add('hidden');
+  _pollingAborted = true;
+}
+function resetPolling() {
+  _pollingAborted = false;
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -332,6 +339,7 @@ async function pollRestart() {
   let lastPhase = '';
 
   for (let i = 0; i < 90; i++) {
+    if (_pollingAborted) return;
     await sleep(2000);
     const elapsed = Math.floor((Date.now() - t0) / 1000);
 
@@ -438,6 +446,7 @@ async function doRestart() {
 }
 
 async function powerAction(action) {
+  resetPolling();
   if (action === 'stop') {
     if (!confirm('Apagar el servidor PZ?\n\nLos jugadores conectados seran desconectados. Los saves en disco se conservan.')) return;
   } else if (action === 'restart') {
@@ -479,6 +488,7 @@ async function pollPower(targetRunning) {
   const deadline = startMs + 180000; // 3 min maximo
 
   for (let i = 0; i < 90; i++) {
+    if (_pollingAborted) return;
     await sleep(2000);
     if (Date.now() > deadline) break;
 
