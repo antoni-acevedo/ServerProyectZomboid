@@ -1,9 +1,11 @@
+import json
 import os
 import secrets
 import socket
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, status, Form
@@ -199,6 +201,245 @@ def _run_in_background(kind: str, args: list[str], timeout: int):
         finally:
             _finish_op()
     threading.Thread(target=_do, daemon=True).start()
+
+
+# --- Auto-shutdown por inactividad ---
+
+AUTO_SHUTDOWN_CONFIG_FILE = DATA_DIR / "auto_shutdown.json"
+
+_default_auto_config = {
+    "enabled": False,
+    "threshold_min": 15,
+    "check_interval_s": 120,
+    "whitelist": [],
+}
+
+_auto_lock = threading.Lock()
+_auto_state: dict = {
+    "config": dict(_default_auto_config),
+    "last_player_count": None,
+    "last_check_at": None,
+    "empty_since": None,
+    "scheduled_shutdown_at": None,
+    "paused_until": None,
+    "last_error": None,
+    "next_check_at": None,
+    "last_trigger_reason": None,
+}
+_auto_stop_event = threading.Event()
+
+
+def _load_auto_shutdown_config() -> dict:
+    """Lee config del disco. Devuelve defaults si no existe o falla."""
+    try:
+        if AUTO_SHUTDOWN_CONFIG_FILE.exists():
+            raw = json.loads(AUTO_SHUTDOWN_CONFIG_FILE.read_text(encoding="utf-8"))
+            cfg = dict(_default_auto_config)
+            cfg.update({k: raw[k] for k in _default_auto_config if k in raw})
+            cfg["whitelist"] = list(raw.get("whitelist", []))
+            cfg["threshold_min"] = max(1, min(720, int(cfg["threshold_min"])))
+            cfg["check_interval_s"] = max(15, min(1800, int(cfg["check_interval_s"])))
+            cfg["enabled"] = bool(cfg["enabled"])
+            return cfg
+    except Exception as e:
+        with _auto_lock:
+            _auto_state["last_error"] = f"Error leyendo config: {e}"
+    return dict(_default_auto_config)
+
+
+def _save_auto_shutdown_config(cfg: dict) -> None:
+    AUTO_SHUTDOWN_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AUTO_SHUTDOWN_CONFIG_FILE.write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _count_players_from_logs() -> tuple[int, str | None]:
+    """Cuenta jugadores activos en los logs del server (joined - left/timeout).
+    Devuelve (count, error_msg). count=-1 si fallo."""
+    code, out, err = docker_exec(["logs", "--tail", "400", ZOMBOID_CONTAINER], timeout=10)
+    if code != 0:
+        return -1, (err or "docker logs fallo").strip()[:200]
+    if not out:
+        return -1, "logs vacios"
+
+    joined = 0
+    left = 0
+    for line in out.splitlines():
+        low = line.lower()
+        if not low.strip():
+            continue
+        # Patrones comunes en logs PZ (best-effort, los logs no son 100% deterministas).
+        is_join = (
+            "joined the game" in low
+            or "joined server" in low
+            or ("joined" in low and " server" in low and "join" not in low.replace("joined", "", 1))
+        )
+        is_leave = (
+            "left the game" in low
+            or "disconnected" in low
+            or "lost connection" in low
+            or "timed out" in low
+            or "kicked" in low
+            or "banned" in low
+        )
+        if is_join:
+            joined += 1
+        elif is_leave:
+            left += 1
+    return max(0, joined - left), None
+
+
+def auto_shutdown_loop() -> None:
+    """Background thread: vigila jugadores y dispara stop cuando procede."""
+    while not _auto_stop_event.is_set():
+        try:
+            with _auto_lock:
+                cfg = _auto_state["config"]
+
+            if not cfg["enabled"]:
+                wait = min(60, cfg["check_interval_s"])
+                _auto_stop_event.wait(wait)
+                continue
+
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+            with _auto_lock:
+                paused_until_raw = _auto_state.get("paused_until")
+                paused_until = datetime.fromisoformat(paused_until_raw) if paused_until_raw else None
+                if paused_until and now < paused_until:
+                    _auto_state["next_check_at"] = (now + timedelta(seconds=cfg["check_interval_s"])).isoformat()
+                    _auto_stop_event.wait(cfg["check_interval_s"])
+                    continue
+                if paused_until and now >= paused_until:
+                    _auto_state["paused_until"] = None
+                # Marcar proximo check
+                _auto_state["next_check_at"] = (now + timedelta(seconds=cfg["check_interval_s"])).isoformat()
+
+            status = get_status()
+            if not status.get("running"):
+                with _auto_lock:
+                    _auto_state["last_player_count"] = 0
+                    _auto_state["empty_since"] = None
+                    _auto_state["scheduled_shutdown_at"] = None
+                _auto_stop_event.wait(cfg["check_interval_s"])
+                continue
+
+            player_count, err = _count_players_from_logs()
+            with _auto_lock:
+                _auto_state["last_player_count"] = player_count
+                _auto_state["last_check_at"] = now_iso
+                _auto_state["last_error"] = err
+
+                if err is not None or player_count < 0:
+                    pass
+                elif player_count > 0:
+                    _auto_state["empty_since"] = None
+                    _auto_state["scheduled_shutdown_at"] = None
+                else:
+                    empty_iso = _auto_state["empty_since"]
+                    if empty_iso is None:
+                        _auto_state["empty_since"] = now_iso
+                        empty_dt = now
+                    else:
+                        empty_dt = datetime.fromisoformat(empty_iso)
+                    empty_seconds = (now - empty_dt).total_seconds()
+                    threshold_seconds = cfg["threshold_min"] * 60
+                    if empty_seconds >= threshold_seconds:
+                        _auto_state["scheduled_shutdown_at"] = now_iso
+                        _auto_state["last_trigger_reason"] = (
+                            f"sin jugadores {int(empty_seconds//60)} min (umbral {cfg['threshold_min']} min)"
+                        )
+                        _run_in_background(
+                            "stop",
+                            ["stop", "--time", "30", ZOMBOID_CONTAINER],
+                            timeout=45,
+                        )
+                        _auto_state["empty_since"] = None
+
+        except Exception as ex:
+            with _auto_lock:
+                _auto_state["last_error"] = str(ex)[:200]
+        finally:
+            with _auto_lock:
+                wait = _auto_state["config"]["check_interval_s"]
+            _auto_stop_event.wait(wait)
+
+
+@app.on_event("startup")
+def _startup_auto_shutdown() -> None:
+    """Arranca el scheduler al boot del panel. Lee config del disco."""
+    global _auto_state
+    _auto_stop_event.clear()
+    cfg = _load_auto_shutdown_config()
+    with _auto_lock:
+        _auto_state["config"] = cfg
+        _auto_state["last_error"] = None
+    t = threading.Thread(target=auto_shutdown_loop, daemon=True, name="auto-shutdown")
+    t.start()
+
+
+@app.get("/api/auto-shutdown")
+def api_get_auto_shutdown(user: str = Depends(check_credentials)):
+    def _iso(v):
+        return v.isoformat() if isinstance(v, datetime) else v
+
+    with _auto_lock:
+        snapshot = {
+            "config": dict(_auto_state["config"]),
+            "state": {
+                "last_player_count": _auto_state["last_player_count"],
+                "last_check_at": _iso(_auto_state["last_check_at"]),
+                "next_check_at": _iso(_auto_state["next_check_at"]),
+                "empty_since": _iso(_auto_state["empty_since"]),
+                "scheduled_shutdown_at": _iso(_auto_state["scheduled_shutdown_at"]),
+                "paused_until": _iso(_auto_state["paused_until"]),
+                "last_error": _auto_state["last_error"],
+                "last_trigger_reason": _auto_state["last_trigger_reason"],
+            },
+        }
+    return JSONResponse(snapshot)
+
+
+@app.post("/api/auto-shutdown")
+async def api_set_auto_shutdown(request: Request, user: str = Depends(check_credentials)):
+    body = await request.json()
+    whitelist_raw = body.get("whitelist") or ""
+    whitelist = [n.strip() for n in str(whitelist_raw).replace("\n", ",").split(",") if n.strip()]
+    cfg = {
+        "enabled": bool(body.get("enabled", False)),
+        "threshold_min": max(1, min(720, int(body.get("threshold_min", 15)))),
+        "check_interval_s": max(15, min(1800, int(body.get("check_interval_s", 120)))),
+        "whitelist": whitelist,
+    }
+    _save_auto_shutdown_config(cfg)
+    with _auto_lock:
+        _auto_state["config"] = cfg
+        _auto_state["paused_until"] = None
+    return JSONResponse({"ok": True, "config": cfg})
+
+
+@app.post("/api/auto-shutdown/cancel")
+def api_cancel_auto_shutdown(user: str = Depends(check_credentials)):
+    with _auto_lock:
+        _auto_state["empty_since"] = None
+        _auto_state["scheduled_shutdown_at"] = None
+        _auto_state["last_trigger_reason"] = None
+    return JSONResponse({"ok": True, "message": "Contador reseteado."})
+
+
+@app.post("/api/auto-shutdown/pause")
+def api_pause_auto_shutdown(request: Request, user: str = Depends(check_credentials)):
+    minutes = 60
+    try:
+        minutes = int(request.query_params.get("minutes", "60"))
+    except (TypeError, ValueError):
+        pass
+    minutes = max(5, min(720, minutes))
+    until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    with _auto_lock:
+        _auto_state["paused_until"] = until.isoformat()
+    return JSONResponse({"ok": True, "paused_until": until.isoformat(), "minutes": minutes})
 
 
 @app.get("/healthz", include_in_schema=False)

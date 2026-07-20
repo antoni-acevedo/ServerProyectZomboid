@@ -149,6 +149,74 @@
     {% if status.error %}<p class="mt-2 text-sm text-red-400">{{ status.error }}</p>{% endif %}
   </section>
 
+  <section class="bg-slate-800 rounded-lg border border-slate-700 p-5">
+    <div class="flex items-center gap-3 flex-wrap">
+      <span class="text-lg">🛌</span>
+      <h2 class="text-lg font-semibold">Auto-apagado por inactividad</h2>
+      <span id="auto-shutdown-badge"
+            class="ml-auto px-2 py-1 text-xs rounded font-semibold bg-slate-700 text-slate-300">
+        Cargando...
+      </span>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex items-center gap-2 md:col-span-2">
+        <input type="checkbox" id="auto-shutdown-enabled"
+               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500" />
+        <span class="text-sm text-slate-200">Apagar automaticamente cuando no haya jugadores</span>
+      </label>
+
+      <label class="block">
+        <span class="text-sm text-slate-300">Apagar tras no jugadores</span>
+        <div class="mt-1 flex items-center gap-2">
+          <input type="number" id="auto-shutdown-threshold" min="1" max="720" step="1" value="15"
+                 class="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 font-mono text-sm" />
+          <span class="text-sm text-slate-400">minutos</span>
+        </div>
+      </label>
+
+      <label class="block">
+        <span class="text-sm text-slate-300">Comprobar cada</span>
+        <div class="mt-1 flex items-center gap-2">
+          <input type="number" id="auto-shutdown-check-interval" min="15" max="1800" step="15" value="120"
+                 class="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 font-mono text-sm" />
+          <span class="text-sm text-slate-400">segundos</span>
+        </div>
+      </label>
+
+      <label class="block md:col-span-2">
+        <span class="text-sm text-slate-300">Cuentas exentas (whitelist, una por linea)</span>
+        <textarea id="auto-shutdown-whitelist" rows="2"
+                  placeholder="nombre_admin&#10;otra_cuenta"
+                  class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 font-mono text-xs"></textarea>
+      </label>
+
+      <div class="md:col-span-2 flex gap-2 pt-1">
+        <button type="button" onclick="saveAutoShutdown()"
+                class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded text-sm font-medium">
+          Guardar
+        </button>
+        <button type="button" onclick="cancelAutoShutdown()"
+                class="bg-amber-600 hover:bg-amber-500 px-3 py-1.5 rounded text-sm font-medium">
+          Resetear contador
+        </button>
+        <button type="button" onclick="pauseAutoShutdown(60)"
+                class="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-sm">
+          Pausar 1h
+        </button>
+        <button type="button" onclick="pauseAutoShutdown(720)"
+                class="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-sm">
+          Pausar 12h
+        </button>
+      </div>
+
+      <div id="auto-shutdown-state"
+           class="md:col-span-2 text-xs text-slate-400 italic pt-3 border-t border-slate-700">
+        Estado: cargando...
+      </div>
+    </div>
+  </section>
+
   <section class="bg-slate-800 rounded-lg border border-slate-700">
     <div class="border-b border-slate-700 overflow-x-auto" id="tab-bar">
       <nav class="flex min-w-max">
@@ -595,6 +663,99 @@ function fetchLogs() {
 function refreshPage() {
   fetch('/api/status').then(r => r.json()).then(() => location.reload()).catch(() => location.reload());
 }
+
+// --- Auto-shutdown UI ---
+
+async function loadAutoShutdownState() {
+  const r = await fetch('/api/auto-shutdown');
+  if (!r.ok) return;
+  const data = await r.json();
+  const cfg = data.config || {};
+  const st = data.state || {};
+
+  document.getElementById('auto-shutdown-enabled').checked = !!cfg.enabled;
+  document.getElementById('auto-shutdown-threshold').value = cfg.threshold_min ?? 15;
+  document.getElementById('auto-shutdown-check-interval').value = cfg.check_interval_s ?? 120;
+  document.getElementById('auto-shutdown-whitelist').value = (cfg.whitelist || []).join('\n');
+
+  const badge = document.getElementById('auto-shutdown-badge');
+  const state = document.getElementById('auto-shutdown-state');
+
+  if (!cfg.enabled) {
+    badge.textContent = 'INACTIVO';
+    badge.className = 'ml-auto px-2 py-1 text-xs rounded font-semibold bg-slate-700 text-slate-300';
+  } else if (st.paused_until && new Date(st.paused_until) > new Date()) {
+    const until = new Date(st.paused_until).toLocaleTimeString();
+    badge.textContent = `PAUSADO hasta ${until}`;
+    badge.className = 'ml-auto px-2 py-1 text-xs rounded font-semibold bg-blue-900/60 text-blue-200 border border-blue-700';
+  } else if (st.scheduled_shutdown_at) {
+    badge.textContent = 'APAGADO programado';
+    badge.className = 'ml-auto px-2 py-1 text-xs rounded font-semibold bg-amber-900/60 text-amber-200 border border-amber-700';
+  } else if (st.last_player_count !== null && st.last_player_count >= 0) {
+    badge.textContent = `VIGILANDO (${st.last_player_count} jug.)`;
+    badge.className = 'ml-auto px-2 py-1 text-xs rounded font-semibold bg-emerald-900/60 text-emerald-200 border border-emerald-700';
+  } else {
+    badge.textContent = 'VIGILANDO';
+    badge.className = 'ml-auto px-2 py-1 text-xs rounded font-semibold bg-emerald-900/60 text-emerald-200 border border-emerald-700';
+  }
+
+  let parts = [];
+  if (st.last_check_at) parts.push(`Ultimo check: hace minutos`);
+  if (st.next_check_at) parts.push(`proximo: ${new Date(st.next_check_at).toLocaleTimeString()}`);
+  if (st.empty_since) {
+    const minsAgo = Math.floor((Date.now() - new Date(st.empty_since).getTime()) / 60000);
+    parts.push(`vacio desde hace ${minsAgo} min, apagado programado aprox en ${Math.max(0, cfg.threshold_min - minsAgo)} min`);
+  }
+  if (st.last_trigger_reason) parts.push(`Ultima razon: ${st.last_trigger_reason}`);
+  if (st.last_error) parts.push(`ultimo error: ${st.last_error}`);
+  if (parts.length === 0) parts.push('Aun sin checks. Activar el auto-apagado para empezar.');
+  state.textContent = parts.join(' · ');
+}
+
+async function saveAutoShutdown() {
+  const body = {
+    enabled: document.getElementById('auto-shutdown-enabled').checked,
+    threshold_min: parseInt(document.getElementById('auto-shutdown-threshold').value, 10) || 15,
+    check_interval_s: parseInt(document.getElementById('auto-shutdown-check-interval').value, 10) || 120,
+    whitelist: document.getElementById('auto-shutdown-whitelist').value,
+  };
+  const r = await fetch('/api/auto-shutdown', {
+    method: 'POST',
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (r.ok) {
+    const d = await r.json();
+    const msg = d.ok ? 'Configuracion guardada' : 'Error guardando';
+    showFlash(msg);
+  } else {
+    showFlash('Error ' + r.status);
+  }
+  loadAutoShutdownState();
+}
+
+async function cancelAutoShutdown() {
+  await fetch('/api/auto-shutdown/cancel', { method: 'POST', headers: { 'Accept': 'application/json' } });
+  showFlash('Contador reseteado');
+  loadAutoShutdownState();
+}
+
+async function pauseAutoShutdown(minutes) {
+  await fetch('/api/auto-shutdown/pause?minutes=' + minutes, { method: 'POST', headers: { 'Accept': 'application/json' } });
+  showFlash(`Pausado ${minutes} min`);
+  loadAutoShutdownState();
+}
+
+function showFlash(msg) {
+  const el = document.createElement('div');
+  el.className = 'fixed top-4 right-4 z-50 bg-emerald-700 text-white px-4 py-2 rounded shadow-lg text-sm';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+loadAutoShutdownState();
+setInterval(loadAutoShutdownState, 30000);
 
 setTimeout(refreshPage, 30000);
 </script>
