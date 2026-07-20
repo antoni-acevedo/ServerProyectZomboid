@@ -29,7 +29,10 @@ services:
       - WORKSHOP_IDS=
       - SELF_MANAGED_MODS=true
     volumes:
-      - ./pzdata:/home/steam/Zomboid
+      # Named volume `pzdata` (declarado al final del archivo).
+      # Sustituye al bind mount `./pzdata` que se borraba en cada re-deploy de Dokploy.
+      # Los saves / INI / sandbox sobreviven a `docker compose pull && up -d`.
+      - pzdata:/home/steam/Zomboid
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f ProjectZomboid || pgrep -f java || exit 1"]
       interval: 30s
@@ -49,7 +52,7 @@ services:
       # Si ademas quieres acceso directo por IP (http://VPS:8080), anade firewall abierto en el 8080 del host.
       - "8080:8080"
     volumes:
-      - ./pzdata:/data:rw
+      - pzdata:/data:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - DATA_DIR=/data
@@ -62,3 +65,9 @@ services:
       - PUBLIC_IP=${PUBLIC_IP:-}
     depends_on:
       - zomboid
+
+# Volumenes nombrados. `pzdata` guarda saves/INI/sandbox del juego y
+# sobrevive a `docker compose pull` y `up -d`. NO se borra con `down`
+# (a diferencia de bind mounts en rutas relativas).
+volumes:
+  pzdata:

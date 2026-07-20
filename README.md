@@ -341,6 +341,55 @@ scripts\start.cmd
 
 **Aviso**: en Build 42 inestable, cada parche semanal puede requerir wipe (borrar saves) para evitar corrupcion. Haz backup de `pzdata\Saves\Multiplayer\servertest\` antes de actualizar.
 
+> **Importante para Dokploy o VPS**: este repo ya usa **named volume `pzdata`** en vez de bind mounts `./pzdata`. Esto significa que `docker compose pull && up -d` en Dokploy **NO borra los saves**: el volumen Docker vive en `/var/lib/docker/volumes/` y Dokploy no lo toca. Si vienes del bind mount antiguo, sigue la guia de migracion abajo.
+
 ### Quiero dejar la imagen preparada para no perder tiempo
 
 Tus saves y configs estan en `pzdata/`. Si reinstalas Docker Desktop o cambias de PC, basta con copiar `pzdata/` y `.env` (ambos ignorados por git).
+
+### Migracion de bind mount a named volume (una sola vez)
+
+Si antes guardabas saves en `./pzdata` (bind mount relativo) y los perdiste tras un redeploy, este fix es para ti. Tras aplicar el cambio del `docker-compose.yml`, todos los saves iran a un **named volume** que Dokploy no toca nunca.
+
+```bash
+# 1. Backup completo del bind mount actual (por si acaso)
+cd /opt/dokploy/.../tu-app/
+tar czf ~/pzdata_backup_$(date +%Y%m%d_%H%M%S).tar.gz pzdata/
+
+# 2. Pull / Redeploy con el compose nuevo
+git pull            # o desde Dokploy UI
+
+# 3. Verificar que el named volume existe
+docker volume ls | grep pzdata
+# Esperado: serverproyectzomboid_pzdata (o <project>_pzdata)
+
+# 4. Copiar los datos del bind mount viejo al named volume nuevo.
+#    Ajusta <project>_pzdata segun el paso 3.
+docker run --rm \
+    -v $(pwd)/pzdata:/from:ro \
+    -v serverproyectzomboid_pzdata:/to \
+    alpine sh -c "cp -a /from/. /to/ && echo OK"
+
+# 5. Verificar
+docker run --rm -v serverproyectzomboid_pzdata:/data alpine ls /data/Saves/Multiplayer/servertest/
+
+# 6. Reiniciar containers para que monten el volumen nuevo
+docker compose restart
+```
+
+**Importante para Dokploy**: el named volume `pzdata` lo crea Docker automaticamente al hacer `docker compose up -d` despues de un primer deploy con el compose nuevo. Dokploy no recrea el volume en re-deploys posteriores — tus saves sobreviven.
+
+### Backups automaticos del volumen
+
+`scripts/backup-pzdata.sh` crea snapshots `.tar.gz` del volumen y los rota (>30 dias).
+
+```bash
+# Local: ejecutar a mano
+scripts/backup-pzdata.sh /var/backups
+
+# Cron en el VPS (diario a las 4am):
+crontab -e
+# Anade: 0 4 * * * /opt/dokploy/.../scripts/backup-pzdata.sh /var/backups/pzdata >> /var/log/pzbackup.log 2>&1
+```
+
+El script detecta automaticamente el nombre del volumen. Ver `scripts/backup-pzdata.sh` para instrucciones completas de restauracion.
