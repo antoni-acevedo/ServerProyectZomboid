@@ -19,6 +19,10 @@ pzdata/Server/servertest_*spawn*.lua
 *.log
 logs/
 
+# Backups generados por scripts/backup-pzdata.sh
+*.tar.gz
+*.bak
+
 # Python
 panel/__pycache__/
 panel/**/__pycache__/
