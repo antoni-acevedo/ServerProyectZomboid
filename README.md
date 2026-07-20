@@ -341,43 +341,51 @@ scripts\start.cmd
 
 **Aviso**: en Build 42 inestable, cada parche semanal puede requerir wipe (borrar saves) para evitar corrupcion. Haz backup de `pzdata\Saves\Multiplayer\servertest\` antes de actualizar.
 
-> **Importante para Dokploy o VPS**: este repo ya usa **named volume `pzdata`** en vez de bind mounts `./pzdata`. Esto significa que `docker compose pull && up -d` en Dokploy **NO borra los saves**: el volumen Docker vive en `/var/lib/docker/volumes/` y Dokploy no lo toca. Si vienes del bind mount antiguo, sigue la guia de migracion abajo.
+> **Importante para Dokploy o VPS**: este repo usa un **bind mount absoluto** (`/opt/dokploy-persistent/pzdata`) que vive FUERA del scope de Dokploy. Dokploy no puede tocar ese directorio aunque intente destruir el stack completo. Los saves, INI y configuracion del panel sobreviven a TODO. Si vienes de un setup anterior (`./pzdata` bind o named volume), sigue la guia de migracion abajo.
 
 ### Quiero dejar la imagen preparada para no perder tiempo
 
 Tus saves y configs estan en `pzdata/`. Si reinstalas Docker Desktop o cambias de PC, basta con copiar `pzdata/` y `.env` (ambos ignorados por git).
 
-### Migracion de bind mount a named volume (una sola vez)
+### Migracion final a bind mount persistente en el host (una sola vez)
 
-Si antes guardabas saves en `./pzdata` (bind mount relativo) y los perdiste tras un redeploy, este fix es para ti. Tras aplicar el cambio del `docker-compose.yml`, todos los saves iran a un **named volume** que Dokploy no toca nunca.
+Este repo ya no usa named volume ni bind mounts relativos: usa un bind mount al directorio **`/opt/dokploy-persistent/pzdata`**, que vive fuera del scope de Dokploy.
+
+> **Importante**: Dokploy puede destruir, recrear, hacer pull, redeploy — el directorio `/opt/dokploy-persistent/` no lo toca. Es un directorio del host que Dokploy **no conoce**.
+
+**Setup inicial (Hildebrando debe correrlo UNA sola vez en el VPS)**:
 
 ```bash
-# 1. Backup completo del bind mount actual (por si acaso)
-cd /opt/dokploy/.../tu-app/
-tar czf ~/pzdata_backup_$(date +%Y%m%d_%H%M%S).tar.gz pzdata/
+# 1. Crear directorio persistente FUERA del scope de Dokploy
+sudo mkdir -p /opt/dokploy-persistent/pzdata
+sudo chmod 777 /opt/dokploy-persistent/pzdata
 
-# 2. Pull / Redeploy con el compose nuevo
-git pull            # o desde Dokploy UI
+# 2. Verificar
+ls -la /opt/dokploy-persistent/
+# Esperado: drwxrwxrwx ... pzdata
 
-# 3. Verificar que el named volume existe
-docker volume ls | grep pzdata
-# Esperado: serverproyectzomboid_pzdata (o <project>_pzdata)
-
-# 4. Copiar los datos del bind mount viejo al named volume nuevo.
-#    Ajusta <project>_pzdata segun el paso 3.
+# 3. (Opcional) Si tienes saves en un named volume existente, copialos al directorio:
 docker run --rm \
-    -v $(pwd)/pzdata:/from:ro \
-    -v serverproyectzomboid_pzdata:/to \
+    -v serverproyectzomboid_pzdata:/from:ro \
+    -v /opt/dokploy-persistent/pzdata:/to \
     alpine sh -c "cp -a /from/. /to/ && echo OK"
 
-# 5. Verificar
-docker run --rm -v serverproyectzomboid_pzdata:/data alpine ls /data/Saves/Multiplayer/servertest/
+# 4. (Opcional) Si tienes saves en el bind mount viejo `./pzdata`, tambien:
+docker run --rm \
+    -v $(pwd)/pzdata:/from:ro \
+    -v /opt/dokploy-persistent/pzdata:/to \
+    alpine sh -c "cp -a /from/. /to/ && echo OK"
 
-# 6. Reiniciar containers para que monten el volumen nuevo
-docker compose restart
+# 5. Ahora en Dokploy UI: Redeploy.
+#    Los contenedores montan /opt/dokploy-persistent/pzdata automaticamente.
+
+# 6. Verificar despues del deploy:
+ls /opt/dokploy-persistent/pzdata/Saves/Multiplayer/servertest/
 ```
 
-**Importante para Dokploy**: el named volume `pzdata` lo crea Docker automaticamente al hacer `docker compose up -d` despues de un primer deploy con el compose nuevo. Dokploy no recrea el volume en re-deploys posteriores — tus saves sobreviven.
+**Posterior mente**: cualquier deploy/repull/update de Dokploy **NO toca** ese directorio. Los saves, configs del panel, INI, sandbox, etc. sobreviven siempre.
+
+**Cambiar la ruta**: si prefieres otro directorio (ej. `/var/lib/pzdata/` o `/srv/pzdata/`), cambialo en `docker-compose.yml` y crea ese directorio con `chmod 777` en el host. Ambas referencias (zomboid y panel) deben apuntar a la misma ruta.
 
 ### Backups automaticos del volumen
 
