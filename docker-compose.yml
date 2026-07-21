@@ -1,3 +1,5 @@
+volumes:
+  pzdata:
 services:
   zomboid:
     image: danixu86/project-zomboid-dedicated-server:latest-unstable
@@ -9,14 +11,13 @@ services:
       - "8766:8766/udp"
       - "8767:8767/udp"
     environment:
-      - LANG=en_EN.UTF-8
+      - LANG=es_ES.UTF-8
       - NOSTEAM=False
       - MODFOLDERS=workshop,steam,mods
       - DEBUG=False
       - ADMINUSERNAME=admin
       - ADMINPASSWORD=${ADMIN_PASSWORD}
-      - SERVERNAME=
-      - IP=
+      - SERVERNAME=${SERVER_NAME}
       - PORT=${SERVER_PORT:-16261}
       - UDPPORT=${SERVER_PORT2:-16262}
       - STEAMVAC=True
@@ -25,15 +26,15 @@ services:
       - PASSWORD=${SERVER_PASSWORD:-}
       - DISPLAYNAME=${SERVER_PUBLIC_NAME}
       - RCONPASSWORD=${RCON_PASSWORD:-}
-      - MOD_IDS=
-      - WORKSHOP_IDS=
+      - MOD_IDS=${MODS_IDS}
+      - WORKSHOP_IDS=${WORKSHOP_IDS}
       - SELF_MANAGED_MODS=true
     volumes:
       # Bind mount ABSOLUTO al host: directorio persistente FUERA del scope de Dokploy.
       # Dokploy solo limpia `/opt/dokploy/.../tu-app/` pero NO `/opt/dokploy-persistent/`.
       # Los saves, INI y sandbox sobreviven a CUALQUIER redeploy, pull, recreate o destroy de Dokploy.
       # Requisito: crear el dir una vez en el VPS (ver README "Migracion final").
-      - /opt/dokploy-persistent/pzdata:/home/steam/Zomboid
+      - pzdata:/home/steam/Zomboid
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f ProjectZomboid || pgrep -f java || exit 1"]
       interval: 30s
@@ -47,13 +48,8 @@ services:
       dockerfile: Dockerfile
     container_name: pz-panel
     restart: unless-stopped
-    ports:
-      # Antes: "127.0.0.1:8080:8080" -> acoplaba al loopback del host, Traefik no llegaba.
-      # Ahora sin prefijo: Dokploy Traefik habla con el contenedor por DNS interno (panel:8080).
-      # Si ademas quieres acceso directo por IP (http://VPS:8080), anade firewall abierto en el 8080 del host.
-      - "8080:8080"
     volumes:
-      - /opt/dokploy-persistent/pzdata:/data:rw
+      - pzdata:/data:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - DATA_DIR=/data

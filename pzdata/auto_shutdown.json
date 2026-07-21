@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "threshold_min": 15,
+  "check_interval_s": 120,
+  "whitelist": []
+}
